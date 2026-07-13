@@ -20,7 +20,7 @@ ShanHaiMirror/
 │   ├── GDD.md           # 游戏设计文档
 │   └── ArtReference/    # 美术参考（待队友填充）
 │
-├── UnrealProject/       # UE5 工程（待创建）
+├── UnrealProject/       # UE5.5 工程（C++）
 │
 ├── Assets/              # 原始美术资产（模型/贴图/音频源文件）
 │
