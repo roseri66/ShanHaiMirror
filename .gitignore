@@ -1,0 +1,30 @@
+# === UE5 Generated ===
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+*.sln
+*.xcodeproj
+*.xcworkspace
+
+# === VS ===
+.vs/
+*.user
+*.filters
+*.opendb
+*.opensdf
+*.sdf
+*.suo
+*.ipch
+*.sln.docstates
+
+# === OS ===
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# === Misc ===
+*.log
+*.crash
+*.trace
