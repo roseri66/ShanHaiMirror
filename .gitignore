@@ -28,3 +28,16 @@ Desktop.ini
 *.log
 *.crash
 *.trace
+
+# === 引擎自带示例内容/占位模型（体积大，非团队自制资源，未配置 Git LFS 故不入库） ===
+# 需要时在编辑器里 Content Browser -> Add -> Feature or Content Pack 重新添加 "Top Down" 模板即可拿回
+UnrealProject/Content/测试用俯视角开发新手包/
+# Manny/Quinn 占位骨骼网格体，随引擎/模板内容包自带，同样可通过上面方式重新获取
+UnrealProject/Content/Characters/Mannequins/
+UnrealProject/Content/Characters/Mannequin_UE4/
+# TopDown 示例地图（World Partition）自己的外部 Actor/Object 伴生数据，同属示例包不入库
+# 注意：我们自己的关卡（如 L_TestArena）不是 World Partition 关卡，不会产生这类文件
+UnrealProject/Content/__ExternalActors__/TopDown/
+UnrealProject/Content/__ExternalActors__/测试用俯视角开发新手包/
+UnrealProject/Content/__ExternalObjects__/TopDown/
+UnrealProject/Content/__ExternalObjects__/测试用俯视角开发新手包/

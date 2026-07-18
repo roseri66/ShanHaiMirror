@@ -15,12 +15,16 @@ public class ShanHaiMirror : ModuleRules
 			"UMG",
 			"AIModule",
 			"GameplayTasks",
-			"NavigationSystem"
+			"NavigationSystem",
+			"GameplayTags"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {
 			"Slate",
 			"SlateCore"
 		});
+
+		// 模块根目录加入私有 include path，使得 Framework/SHMCoreTypes.h 等跨目录引用可用
+		PrivateIncludePaths.Add(ModuleDirectory);
 	}
 }

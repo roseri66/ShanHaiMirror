@@ -4,6 +4,10 @@
 #include "GameFramework/PlayerController.h"
 #include "SMPlayerController.generated.h"
 
+// ============================================================================
+// ASMPlayerController —— 最小化。只设置鼠标光标 + Enhanced Input 子系统。
+// 摄像机在 ASMCharacter 上（SpringArm + Camera）。
+// ============================================================================
 UCLASS()
 class SHANHAIMIRROR_API ASMPlayerController : public APlayerController
 {
@@ -13,24 +17,8 @@ public:
 	ASMPlayerController();
 
 	virtual void BeginPlay() override;
-	virtual void SetupInputComponent() override;
 
-protected:
-	/** 鼠标点击移动 */
-	void OnMoveToPressed();
-
-	/** 键盘 WASD 移动 */
-	void OnMoveX(float Value);
-	void OnMoveY(float Value);
-
-private:
-	/** 俯视角摄像机高度 */
-	UPROPERTY(EditDefaultsOnly, Category = "Camera")
-	float CameraHeight = 1500.0f;
-
-	/** 摄像机俯仰角度 */
-	UPROPERTY(EditDefaultsOnly, Category = "Camera")
-	float CameraPitch = -70.0f;
-
-	void SetupTopDownCamera();
+	// 给 Character 提供鼠标世界坐标（攻击方向/瞄准用）
+	UFUNCTION(BlueprintPure)
+	bool GetMouseWorldLocation(FVector& OutLocation) const;
 };
