@@ -1,76 +1,242 @@
 #include "SMCharacter.h"
+
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
+#include "InputActionValue.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "Components/SceneComponent.h"
+#include "GameFramework/SpringArmComponent.h"
+#include "Camera/CameraComponent.h"
+#include "Engine/World.h"
+#include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetSystemLibrary.h"
+
+#include "Framework/SHMAttributeComponent.h"
+#include "Framework/SHMWeaponComponent.h"
+#include "Framework/SHMAbilityComponent.h"
+#include "Framework/SHMBuildComponent.h"
 
 ASMCharacter::ASMCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	// 俯视角：锁定角色朝向为鼠标方向，不随移动转向
-	GetCharacterMovement()->bOrientRotationToMovement = true;
-	GetCharacterMovement()->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
+	// 俯视角 twin-stick：朝向手动控制（面朝鼠标），不跟随移动方向
+	GetCharacterMovement()->bOrientRotationToMovement = false;
 
-	// 武器挂载点
-	WeaponSocket = CreateDefaultSubobject<USceneComponent>(TEXT("WeaponSocket"));
-	WeaponSocket->SetupAttachment(GetMesh(), TEXT("WeaponSocket"));
+	// ===== 组件 =====
+	AttributeComp = CreateDefaultSubobject<USHMAttributeComponent>(TEXT("AttributeComp"));
+	WeaponComp    = CreateDefaultSubobject<USHMWeaponComponent>(TEXT("WeaponComp"));
+	AbilityComp   = CreateDefaultSubobject<USHMAbilityComponent>(TEXT("AbilityComp"));
+	BuildComp     = CreateDefaultSubobject<USHMBuildComponent>(TEXT("BuildComp"));
+
+	// ===== 俯视角摄像机 =====
+	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
+	SpringArm->SetupAttachment(RootComponent);
+	SpringArm->TargetArmLength = 1500.f;
+	SpringArm->SetRelativeRotation(FRotator(-70.f, 0.f, 0.f));
+	SpringArm->bDoCollisionTest = false;
+	SpringArm->bInheritPitch = false;
+	SpringArm->bInheritYaw = false;
+	SpringArm->bInheritRoll = false;
+	SpringArm->bEnableCameraLag = true;
+	SpringArm->CameraLagSpeed = 8.f;
+
+	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
+	FollowCamera->SetupAttachment(SpringArm, USpringArmComponent::SocketName);
 }
 
 void ASMCharacter::BeginPlay()
 {
 	Super::BeginPlay();
-}
 
-void ASMCharacter::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
+	// 绑定死亡
+	if (AttributeComp)
+	{
+		AttributeComp->OnDeath.AddDynamic(this, &ASMCharacter::OnOwnerDeath);
+	}
 }
 
 void ASMCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-	PlayerInputComponent->BindAxis("MoveX", this, &ASMCharacter::MoveX);
-	PlayerInputComponent->BindAxis("MoveY", this, &ASMCharacter::MoveY);
-	PlayerInputComponent->BindAction("Dash", IE_Pressed, this, &ASMCharacter::OnDash);
-	PlayerInputComponent->BindAction("Attack", IE_Pressed, this, &ASMCharacter::OnAttack);
+	// Enhanced Input 绑定
+	if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(PlayerInputComponent))
+	{
+		if (IA_Move)         { EnhancedInput->BindAction(IA_Move, ETriggerEvent::Triggered, this, &ASMCharacter::OnMove); }
+		if (IA_Move)         { EnhancedInput->BindAction(IA_Move, ETriggerEvent::Completed, this, &ASMCharacter::OnMove); }
+		if (IA_Attack)       { EnhancedInput->BindAction(IA_Attack, ETriggerEvent::Started, this, &ASMCharacter::OnAttack); }
+		if (IA_Dodge)        { EnhancedInput->BindAction(IA_Dodge, ETriggerEvent::Started, this, &ASMCharacter::OnDodge); }
+		if (IA_SwitchWeapon) { EnhancedInput->BindAction(IA_SwitchWeapon, ETriggerEvent::Started, this, &ASMCharacter::OnSwitchWeapon); }
+		if (IA_Skill1)       { EnhancedInput->BindAction(IA_Skill1, ETriggerEvent::Started, this, &ASMCharacter::OnSkill1); }
+		if (IA_Skill2)       { EnhancedInput->BindAction(IA_Skill2, ETriggerEvent::Started, this, &ASMCharacter::OnSkill2); }
+	}
 }
 
-void ASMCharacter::MoveX(float Value)
+void ASMCharacter::Tick(float DeltaTime)
 {
-	if (Value != 0.0f)
-	{
-		AddMovementInput(FVector(1.0f, 0.0f, 0.0f), Value);
-	}
+	Super::Tick(DeltaTime);
+
+	UpdateMouseWorldLocation();
+	UpdateRotationToMouse();
 }
 
-void ASMCharacter::MoveY(float Value)
+// ============================================================================
+//  移动 + 瞄准
+// ============================================================================
+
+void ASMCharacter::OnMove(const FInputActionValue& Value)
 {
-	if (Value != 0.0f)
+	const FVector2D Input = Value.Get<FVector2D>();
+	if (!FMath::IsNearlyZero(Input.X) || !FMath::IsNearlyZero(Input.Y))
 	{
-		AddMovementInput(FVector(0.0f, 1.0f, 0.0f), Value);
+		// 俯视角：X=前后(Y轴), Y=左右(X轴)
+		AddMovementInput(FVector::ForwardVector, Input.X);
+		AddMovementInput(FVector::RightVector, Input.Y);
 	}
+	// Completed 时不传值过来就会归零，不需要额外 stop
 }
 
-void ASMCharacter::OnDash()
+void ASMCharacter::OnAim(const FInputActionValue& Value)
 {
-	float CurrentTime = GetWorld()->GetTimeSeconds();
-	if (CurrentTime - LastDashTime < DashCooldown)
-	{
-		return;
-	}
-	LastDashTime = CurrentTime;
-
-	FVector DashDirection = GetLastMovementInputVector();
-	if (DashDirection.IsNearlyZero())
-	{
-		DashDirection = GetActorForwardVector();
-	}
-
-	FVector DashVelocity = DashDirection * 2000.0f;
-	LaunchCharacter(DashVelocity, false, false);
+	// 键鼠 twin-stick：瞄准是鼠标位置被动轮询（Tick 里的 UpdateMouseWorldLocation）
+	// 不需要额外输入逻辑。保留此回调供手柄右摇杆扩展。
 }
+
+void ASMCharacter::UpdateMouseWorldLocation()
+{
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!PC) return;
+
+	FHitResult Hit;
+	PC->GetHitResultUnderCursor(ECC_Visibility, false, Hit);
+	if (Hit.bBlockingHit)
+	{
+		CachedMouseWorldLocation = Hit.Location;
+	}
+}
+
+void ASMCharacter::UpdateRotationToMouse()
+{
+	const FVector Direction = CachedMouseWorldLocation - GetActorLocation();
+	if (!Direction.IsNearlyZero())
+	{
+		const FRotator TargetRotation = Direction.Rotation();
+		SetActorRotation(FRotator(0.f, TargetRotation.Yaw, 0.f));
+	}
+}
+
+// ============================================================================
+//  攻击（Sprint 1：近战扇形）
+// ============================================================================
 
 void ASMCharacter::OnAttack()
 {
-	// 攻击逻辑（后续接入武器系统）
+	if (!WeaponComp) return;
+
+	const float Now = GetWorld()->GetTimeSeconds();
+	if (Now - LastAttackTime < WeaponComp->GetActiveAttackSpeed())
+	{
+		return;
+	}
+	LastAttackTime = Now;
+
+	PerformMeleeAttack();
+}
+
+void ASMCharacter::PerformMeleeAttack()
+{
+	const FVector     Origin   = GetActorLocation();
+	const FVector     Forward  = GetActorForwardVector();
+	const float       Range    = 200.f;
+	const float       Angle    = 90.f;
+	const float       Damage   = WeaponComp->GetActiveBaseDamage();
+
+	TArray<FHitResult> Hits;
+	const bool bHit = UKismetSystemLibrary::SphereTraceMulti(
+		this, Origin, Origin + Forward * Range, 50.f,
+		UEngineTypes::ConvertToTraceType(ECC_GameTraceChannel1), // 自定义碰撞通道，TL 需在 Project Settings 建一条 Enemy 通道
+		false, TArray<AActor*>(), EDrawDebugTrace::ForDuration,
+		Hits, true, FLinearColor::Red, FLinearColor::Green, 0.5f
+	);
+
+	for (const FHitResult& Hit : Hits)
+	{
+		if (AActor* Victim = Hit.GetActor())
+		{
+			if (USHMAttributeComponent* VictimAttr = Victim->FindComponentByClass<USHMAttributeComponent>())
+			{
+				VictimAttr->ApplyDamage(Damage, this);
+			}
+		}
+	}
+
+	// 命中停顿（Sprint 1 简单实现：播放攻击蒙太奇时挂在 AnimNotify 里暂停 ~0.03s）
+	// S1 先不接入 HitStop，这个由 BP 里挂蒙太奇实现
+}
+
+// ============================================================================
+//  闪避（S2-F1 实现完整逻辑）
+// ============================================================================
+
+void ASMCharacter::OnDodge()
+{
+	if (!AbilityComp) return;
+
+	const FVector InputDir = GetLastMovementInputVector();
+	const FVector DodgeDir = InputDir.IsNearlyZero()
+		? GetActorForwardVector()
+		: InputDir.GetSafeNormal();
+
+	if (AbilityComp->TryDodge(DodgeDir))
+	{
+		// S2-F1：这里加 LaunchCharacter + 无敌帧
+		LaunchCharacter(DodgeDir * 1000.f, false, false);
+	}
+}
+
+// ============================================================================
+//  武器切换 / 技能
+// ============================================================================
+
+void ASMCharacter::OnSwitchWeapon()
+{
+	if (WeaponComp)
+	{
+		WeaponComp->SwitchWeapon();  // S2-F2 实现
+	}
+}
+
+void ASMCharacter::OnSkill1()
+{
+	if (AbilityComp)
+	{
+		AbilityComp->TryCastSkill(0);  // S4 实现
+	}
+}
+
+void ASMCharacter::OnSkill2()
+{
+	if (AbilityComp)
+	{
+		AbilityComp->TryCastSkill(1);  // S4 实现
+	}
+}
+
+// ============================================================================
+//  死亡
+// ============================================================================
+
+void ASMCharacter::OnOwnerDeath()
+{
+	// 禁用输入
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		DisableInput(PC);
+	}
+
+	// 禁用移动
+	GetCharacterMovement()->DisableMovement();
+
+	// TL：这里在 BP 里播放死亡动画 + 3s 后调用 GameMode 的 Restart
+	// C++ 只负责停止逻辑
 }
