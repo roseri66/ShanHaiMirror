@@ -1,4 +1,5 @@
 #include "SHMAbilityComponent.h"
+#include "SHMGameplayTags.h"
 #include "GameFramework/Actor.h"
 
 USHMAbilityComponent::USHMAbilityComponent()
@@ -27,7 +28,7 @@ bool USHMAbilityComponent::TryDodge(FVector Direction)
 	}
 	// S2-F1：这里加位移 + 无敌帧逻辑
 	LastDodgeTime = Now;
-	OnAbilityUsed.Broadcast(FGameplayTag::RequestGameplayTag("Ability.Dodge"));
+	OnAbilityUsed.Broadcast(SHMTags::Ability_Dodge);
 	return true;
 }
 

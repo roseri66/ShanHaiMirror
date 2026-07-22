@@ -127,8 +127,14 @@ struct FFloorBehaviorSnapshot
 	TMap<FGameplayTag, int32> KillsByTag;
 
 	// 维度2：战斗效率
+	// 注意这里存的是**原始计数**而不是比率。比率会丢掉样本量：
+	// 闪避 2 次成功 1 次 与 闪避 40 次成功 20 次 都是 50%，但前者毫无统计意义。
+	// ProfileAnalyzer 需要靠样本量决定置信度，所以除法留给它做。
 	UPROPERTY(BlueprintReadOnly)
-	float RoomClearTimeAvg = 0.f;
+	int32 RoomsCleared = 0;
+
+	UPROPERTY(BlueprintReadOnly)
+	float TotalRoomClearTime = 0.f;
 
 	UPROPERTY(BlueprintReadOnly)
 	int32 HitsTaken = 0;
@@ -137,7 +143,10 @@ struct FFloorBehaviorSnapshot
 	float TotalDamageTaken = 0.f;
 
 	UPROPERTY(BlueprintReadOnly)
-	float DodgeSuccessRate = 0.f;
+	int32 DodgeAttempts = 0;
+
+	UPROPERTY(BlueprintReadOnly)
+	int32 DodgeSuccesses = 0;
 
 	// 维度3：资源盈余
 	UPROPERTY(BlueprintReadOnly)
@@ -153,8 +162,12 @@ struct FFloorBehaviorSnapshot
 	UPROPERTY(BlueprintReadOnly)
 	TSet<FGameplayTag> UniqueSkillsUsed;
 
+	// 本层用过的不同武器（「策略切换意愿」的另一个信号：只用一把 vs 来回换）
 	UPROPERTY(BlueprintReadOnly)
-	float BuildDiffFromLastFloor = 0.f;
+	TSet<FGameplayTag> UniqueWeaponsUsed;
+
+	// 原 BuildDiffFromLastFloor 已移除：它是「与上一层比较」的派生量，
+	// 属于分析而非观察。ProfileAnalyzer 拿得到 History，自己算即可。
 
 	// 维度5：生存压力
 	UPROPERTY(BlueprintReadOnly)

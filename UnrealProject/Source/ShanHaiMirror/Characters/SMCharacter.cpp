@@ -14,6 +14,8 @@
 #include "Framework/SHMWeaponComponent.h"
 #include "Framework/SHMAbilityComponent.h"
 #include "Framework/SHMBuildComponent.h"
+#include "Framework/SHMEventBus.h"
+#include "Framework/SHMGameplayTags.h"
 
 ASMCharacter::ASMCharacter()
 {
@@ -140,6 +142,15 @@ void ASMCharacter::OnAttack()
 	}
 	LastAttackTime = Now;
 
+	// 攻击次数上报 —— 画像「Build 集中度」的主要数据源。
+	// 注意：这里报的是"发起攻击"，不是"命中"。集中度衡量的是玩家倾向用什么，
+	// 打不打得中是「战斗效率」维度的事，两者不能混在一个计数里。
+	if (USHMEventBus* Bus = USHMEventBus::Get(this))
+	{
+		Bus->BroadcastSimple(SHMTags::Event_Combat_Attack, this,
+			WeaponComp->GetActiveWeaponTag());
+	}
+
 	PerformMeleeAttack();
 }
 
@@ -165,7 +176,7 @@ void ASMCharacter::PerformMeleeAttack()
 		{
 			if (USHMAttributeComponent* VictimAttr = Victim->FindComponentByClass<USHMAttributeComponent>())
 			{
-				VictimAttr->ApplyDamage(Damage, this);
+				VictimAttr->ApplyDamage(Damage, this, WeaponComp->GetActiveWeaponTag());
 			}
 		}
 	}
@@ -187,7 +198,17 @@ void ASMCharacter::OnDodge()
 		? GetActorForwardVector()
 		: InputDir.GetSafeNormal();
 
-	if (AbilityComp->TryDodge(DodgeDir))
+	const bool bDodged = AbilityComp->TryDodge(DodgeDir);
+
+	// 冷却中按闪避也要上报（bSuccess=false）——「闪避成功率」的分母是尝试次数，
+	// 只报成功的话这个维度永远是 100%
+	if (USHMEventBus* Bus = USHMEventBus::Get(this))
+	{
+		Bus->BroadcastSimple(SHMTags::Event_Combat_Dodge, this,
+			SHMTags::Ability_Dodge, FGameplayTag(), 0.f, bDodged);
+	}
+
+	if (bDodged)
 	{
 		// S2-F1：这里加 LaunchCharacter + 无敌帧
 		LaunchCharacter(DodgeDir * 1000.f, false, false);
@@ -200,9 +221,19 @@ void ASMCharacter::OnDodge()
 
 void ASMCharacter::OnSwitchWeapon()
 {
-	if (WeaponComp)
+	if (!WeaponComp) return;
+
+	const FGameplayTag PrevTag = WeaponComp->GetActiveWeaponTag();
+	WeaponComp->SwitchWeapon();  // S2-F2 实现
+	const FGameplayTag NewTag = WeaponComp->GetActiveWeaponTag();
+
+	// 切换成功才算数（副武器没配时 SwitchWeapon 是空操作，不能计入「策略切换意愿」）
+	if (PrevTag != NewTag)
 	{
-		WeaponComp->SwitchWeapon();  // S2-F2 实现
+		if (USHMEventBus* Bus = USHMEventBus::Get(this))
+		{
+			Bus->BroadcastSimple(SHMTags::Event_Combat_WeaponSwitch, this, NewTag, PrevTag);
+		}
 	}
 }
 
