@@ -1,8 +1,14 @@
-# 《山海镜》MVP Feature Spec & Sprint Backlog v1.0
+> ⚠️ **设计存档（2026-07-21 之前）。** 项目已重新定位为**求职作品集项目**，实际范围以 [`DECISIONS.md`](./DECISIONS.md) 为准。
+> **仍然有效**：S1（已完成入库）、S2-F1/F2/F3/F4、S3 全部（AI Director 本地版）、S6-F1 的对照开关部分。
+> **已 OUT OF SCOPE**：S2-F5 房间模板（D-10）、S4 全部（Pick3 / 方士 / 6 层 / Boss，D-09/D-03/D-01/D-04）、S5-F1 的 GameNPC 通道（D-08，改 OpenAI 兼容）、S5-F3 敌人补至 10-15 种（D-05）、S6-F2 跨局记忆（D-12）、全部 Sprint 排期表（已作废）。
 
-> 基于 TDD v0.2、GDD v0.2
-> 2 人 × 8 周，1 程序 + 1 美术
+# 《山海镜》MVP Feature Spec & Sprint Backlog v1.1
+
+> 基于 TDD v0.3、GDD v0.4
+> **1 人 × 约 7 周（独立开发，截止 2026-09-15）**
 > 一句话定位：**每个 Sprint 结束时都有一个可玩构建，Sprint 3 结束必须见到"AI 观察我并调整下一层"的完整闭环。**
+>
+> **v1.1 变更（美术退出 → 单人）**：美术成员退出，项目转单人开发。**下文所有 Spec 的「负责人：程序 + 美术」一律改读为「程序（系统）+ AI 美术管线（AI 生成美术/技术美术，均程序本人产出）」**，不再逐条标注。美术资产来源改为「AI 生成美术 + 原创技术美术」，第三方授权/采购资产不用（比赛要求原创+完整独立知识产权）。各 Spec 的**功能验收逻辑不变**，仅美术相关验收项从「bespoke 手工美术达标」降级为「AI 生成 + 技术美术达标、风格统一即可」。单局目标以 5 层为主选、6 层为拉伸。详见 TDD §0 / §6 / §7 与 GDD §12.6。
 
 ---
 
@@ -888,7 +894,7 @@ USTRUCT() struct FSimpleMirrorMemory { TArray<FString> RecentArchetypes; FString
 - [ ] Gameplay 视频展示：开 AI 和关 AI 的对比——同一层、同一个人打、不同体验
 - [ ] 两个视频都无需后期配音/解说也能看懂（有 UI 文字 + 白泽台词）
 
-**负责人**：程序（调参+Bug）+ 美术（视频录制/剪辑）+ 两人一起
+**负责人**：程序（调参 + Bug + 引擎内录制「开/关 AI 对照」比赛视频，替代 bespoke Trailer）
 
 ---
 
@@ -956,9 +962,9 @@ USTRUCT() struct FSimpleMirrorMemory { TArray<FString> RecentArchetypes; FString
 |---|---|---|---|
 | S1-F1 | Twin-Stick 移动+瞄准 | 程序 | WASD 移, 鼠标瞄, 朝向与移动解耦 |
 | S1-F2 | 基础近战攻击 | 程序 | 扇形判定 + 伤害数字 + Hit Stop |
-| S1-F3 | Grunt 敌人 | 程序 + 美术 | 发现-追击-攻击-死亡 |
+| S1-F3 | Grunt 敌人 | 程序 + AI美术 | 发现-追击-攻击-死亡 |
 | S1-F4 | 俯视角相机 + HP/死亡 | 程序 | 平滑跟随 + HP 条 + 死亡黑屏 |
-| S1-F5 | Sprint 1 集成 | 程序 + 美术 | 一个测试房间可完整打怪-清空-传送 |
+| S1-F5 | Sprint 1 集成 | 程序 + AI美术 | 一个测试房间可完整打怪-清空-传送 |
 
 **Sprint 1 Done = 可玩构建：一个房间、一个角色、一种敌人、能打能死。**
 
@@ -972,9 +978,9 @@ USTRUCT() struct FSimpleMirrorMemory { TArray<FString> RecentArchetypes; FString
 |---|---|---|---|
 | S2-F1 | 闪避系统 | 程序 | 无敌帧 0.25s + 冷却 0.8s + 取消攻击 |
 | S2-F2 | 武器切换 + 弓 | 程序 | 空格切 剑/弓 + 发射投射物 |
-| S2-F3 | 4 种敌人原型 | 程序 + 美术 | Grunt/Tank/Rush/Shooter 行为明显不同 |
+| S2-F3 | 4 种敌人原型 | 程序 + AI美术 | Grunt/Tank/Rush/Shooter 行为明显不同 |
 | S2-F4 | 遭遇系统 | 程序 | 波次 + Budget + 清空判定 |
-| S2-F5 | 2 房间模板 + 流式加载 | 程序 + 美术 | 开阔/狭窄房 + 传送门过渡 |
+| S2-F5 | 2 房间模板 + 流式加载 | 程序 + AI美术 | 开阔/狭窄房 + 传送门过渡 |
 
 **Sprint 2 Done = 可玩构建：一个角色、闪避、弓+剑、4 种怪、波次节奏、两个房间串起来。**
 
@@ -989,7 +995,7 @@ USTRUCT() struct FSimpleMirrorMemory { TArray<FString> RecentArchetypes; FString
 | S3-F1 | EventBus + BehaviorRecorder | 程序 | 五维 14 项埋点正确采集 |
 | S3-F2 | ProfileAnalyzer | 程序 | 五维 0-100 + 置信度, 可单元测试 |
 | S3-F3 | **LocalDirectorCore** | **程序** | 画像→决策→护栏, **远程/近战玩家得到不同第二层** |
-| S3-F4 | RuleManager + 导演报告 UI | 程序 + 美术 | 规则卡显示 + 全局 Effect 生效 |
+| S3-F4 | RuleManager + 导演报告 UI | 程序 + AI美术 | 规则卡显示 + 全局 Effect 生效 |
 | S3-F5 | 2 层完整 Demo 集成 | 程序 | 完整闭环可玩, 第二层因打法而异 |
 
 **Sprint 3 Done = "AI 观察我、告诉我它看到了什么、下一层真的不一样了"——AI Native 成立。**
@@ -1003,8 +1009,8 @@ USTRUCT() struct FSimpleMirrorMemory { TArray<FString> RecentArchetypes; FString
 | Spec | 名称 | 负责人 | 验收摘要 |
 |---|---|---|---|
 | S4-F1 | Pick 3 + 被动叠加 | 程序 | 每层选 1, 永久生效, AI 诱导权重生效 |
-| S4-F2 | 方士角色 | 程序 + 美术 | 远程法术, 低血高移速 |
-| S4-F3 | 6 层流程 + 烛龙 Boss | 程序 + 美术 | 30min 完整格, 3 阶段 + 动态技能 |
+| S4-F2 | 方士角色 | 程序 + AI美术 | 远程法术, 低血高移速 |
+| S4-F3 | 6 层流程 + 烛龙 Boss | 程序 + AI美术 | 30min 完整格, 3 阶段 + 动态技能 |
 
 **Sprint 4 Done = 完整的 30 分钟 Roguelike Demo, 本地 AI Director 全功能, 没有 LLM 但可参赛。**
 
@@ -1017,8 +1023,8 @@ USTRUCT() struct FSimpleMirrorMemory { TArray<FString> RecentArchetypes; FString
 | Spec | 名称 | 负责人 | 验收摘要 |
 |---|---|---|---|
 | S5-F1 | GameNPC 集成 + 三级兜底 | 程序 | LLM 可开关, JSON 校验, 断网可玩 |
-| S5-F2 | 白泽台词 + 导演报告精修 | 程序 + 美术 | 每局台词不同, 山海经文风, UI 美观 |
-| S5-F3 | 10-15 种敌人 + AI 视觉反馈 | 程序 + 美术 | 镜面裂纹/符文统一视觉语言 |
+| S5-F2 | 白泽台词 + 导演报告精修 | 程序 + AI美术 | 每局台词不同, 山海经文风, UI 美观 |
+| S5-F3 | 10-15 种敌人 + AI 视觉反馈 | 程序 + AI美术 | 镜面裂纹/符文统一视觉语言 |
 
 **Sprint 5 Done = "AI 有话说 + 内容丰富 + 视觉风格统一"的 Demo。**
 
@@ -1032,7 +1038,7 @@ USTRUCT() struct FSimpleMirrorMemory { TArray<FString> RecentArchetypes; FString
 |---|---|---|---|
 | S6-F1 | 镜界时间轴 + Director 开关 | 程序 | 赛后回放 + 答辩演示神器 |
 | S6-F2 | 简版跨局记忆 | 程序 | 白泽"记得上局的我" |
-| S6-F3 | 平衡调参 + Bug + 视频 | 程序 + 美术 | 不崩溃 + 不难到打不过 + Trailer |
+| S6-F3 | 平衡调参 + Bug + 视频 | 程序 + AI美术 | 不崩溃 + 不难到打不过 + Trailer |
 
 **Sprint 6 Done = 比赛 Demo 冻结, 材料齐全。**
 
