@@ -56,6 +56,12 @@ protected:
 	UFUNCTION()
 	void OnOwnerDeath();
 
+	// 受击回调 —— 上报 Event.Combat.DamageDealt（敌人自己知道自己的原型标签，
+	// 由它来广播，AttributeComponent 就不必回头去 Cast Owner 取标签）
+	// 注意参数名不能叫 Instigator：AActor 自带同名成员，UHT 禁止 UFUNCTION 参数遮蔽它
+	UFUNCTION()
+	void OnDamaged(AActor* DamageInstigator, float Damage);
+
 	// 撞到玩家造成接触伤害
 	UFUNCTION()
 	void OnCapsuleHit(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp,

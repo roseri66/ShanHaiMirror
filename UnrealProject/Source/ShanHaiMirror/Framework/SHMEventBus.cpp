@@ -2,25 +2,17 @@
 #include "Engine/GameInstance.h"
 #include "Kismet/GameplayStatics.h"
 
-const FName USHMEventBus::Tag_OnAttack   = FName("Event.Combat.OnAttack");
-const FName USHMEventBus::Tag_OnHitTaken = FName("Event.Combat.OnHitTaken");
-const FName USHMEventBus::Tag_OnKill     = FName("Event.Combat.OnKill");
-const FName USHMEventBus::Tag_OnDodge    = FName("Event.Combat.OnDodge");
-const FName USHMEventBus::Tag_OnDeath    = FName("Event.Combat.OnDeath");
-
-void USHMEventBus::Initialize(FSubsystemCollectionBase& Collection)
+void USHMEventBus::Broadcast(const FSHMGameplayEvent& Event)
 {
-	Super::Initialize(Collection);
+	OnGameplayEvent.Broadcast(Event);
 }
 
-void USHMEventBus::Deinitialize()
+void USHMEventBus::BroadcastSimple(FGameplayTag EventTag, AActor* Instigator,
+	FGameplayTag SourceTag, FGameplayTag ContextTag, float Magnitude, bool bSuccess)
 {
-	Super::Deinitialize();
-}
-
-void USHMEventBus::Broadcast(FGameplayTag EventTag, AActor* Source)
-{
-	OnCombatEvent.Broadcast(EventTag, Source);
+	FSHMGameplayEvent Event(EventTag, SourceTag, ContextTag, Magnitude, bSuccess);
+	Event.Instigator = Instigator;
+	Broadcast(Event);
 }
 
 USHMEventBus* USHMEventBus::Get(const UObject* WorldContextObject)
