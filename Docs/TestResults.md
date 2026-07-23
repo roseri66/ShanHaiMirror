@@ -20,31 +20,47 @@
 
 | 项 | 值 |
 |---|---|
-| 运行时间 | 2026-07-22 01:21 |
-| 结果 | **16 / 16 通过** |
+| 运行时间 | 2026-07-23 20:52 |
+| 结果 | **29 / 29 通过** |
 | 退出码 | 0 |
-| 运行依赖 | 无需 World / PIE / 网络（被测对象为纯函数）|
+| 运行依赖 | 无需 World / PIE / 网络（被测对象为纯函数/纯逻辑）|
+
+覆盖范围：画像分析器（链路②）· 规则解析器（链路⑥）· 四道护栏（链路⑤）· 本地 Provider（链路④）。
 
 | 结果 | 测试 |
 |---|---|
-| PASS | `Analyze_PopulatesAllFiveDimensions` |
-| PASS | `ArchetypeChange_ConfidenceResets` |
-| PASS | `BalancedWeapons_NoPrimaryBuild` |
-| PASS | `CombatEfficiency_FastAndUnhurtIsHigh` |
-| PASS | `CombatEfficiency_NoRoomsIsNeutral` |
-| PASS | `CombatEfficiency_SlowAndBeatenIsLow` |
-| PASS | `EmptyHistory_InitialConfidence` |
-| PASS | `ResourceSurplus_InertWithoutItemSystem` |
-| PASS | `SameArchetype_ConfidenceGrows` |
-| PASS | `SingleWeapon_FullConcentration` |
-| PASS | `StrategySwitch_ActiveSwitchingIsHigh` |
-| PASS | `StrategySwitch_NoCombatIsNeutral` |
-| PASS | `StrategySwitch_OneTrickIsZero` |
-| PASS | `SurvivalPressure_EventsAccumulate` |
-| PASS | `SurvivalPressure_NoEventsIsZero` |
-| PASS | `ZeroAttack_NoDivideByZero` |
+| PASS | `LocalProvider.HighPressure_GetsRecovery` |
+| PASS | `LocalProvider.LowConfidence_OnlyLightRules` |
+| PASS | `LocalProvider.RangerProfile_GetsCounterWeights` |
+| PASS | `ProfileAnalyzer.Analyze_PopulatesAllFiveDimensions` |
+| PASS | `ProfileAnalyzer.ArchetypeChange_ConfidenceResets` |
+| PASS | `ProfileAnalyzer.BalancedWeapons_NoPrimaryBuild` |
+| PASS | `ProfileAnalyzer.CombatEfficiency_FastAndUnhurtIsHigh` |
+| PASS | `ProfileAnalyzer.CombatEfficiency_NoRoomsIsNeutral` |
+| PASS | `ProfileAnalyzer.CombatEfficiency_SlowAndBeatenIsLow` |
+| PASS | `ProfileAnalyzer.EmptyHistory_InitialConfidence` |
+| PASS | `ProfileAnalyzer.ResourceSurplus_InertWithoutItemSystem` |
+| PASS | `ProfileAnalyzer.SameArchetype_ConfidenceGrows` |
+| PASS | `ProfileAnalyzer.SingleWeapon_FullConcentration` |
+| PASS | `ProfileAnalyzer.StrategySwitch_ActiveSwitchingIsHigh` |
+| PASS | `ProfileAnalyzer.StrategySwitch_NoCombatIsNeutral` |
+| PASS | `ProfileAnalyzer.StrategySwitch_OneTrickIsZero` |
+| PASS | `ProfileAnalyzer.SurvivalPressure_EventsAccumulate` |
+| PASS | `ProfileAnalyzer.SurvivalPressure_NoEventsIsZero` |
+| PASS | `ProfileAnalyzer.ZeroAttack_NoDivideByZero` |
+| PASS | `RuleResolver.CsvFile_LoadsAndResolves` |
+| PASS | `RuleResolver.KnownRule_MapsToMultiplier` |
+| PASS | `RuleResolver.UnknownRule_ReturnsInvalidNoCrash` |
+| PASS | `Validator.Budget_SumCostWithinBudget` |
+| PASS | `Validator.Conflict_ExclusivePairRejected` |
+| PASS | `Validator.Fairness_HeavyNeedsConfidence` |
+| PASS | `Validator.Fairness_ThirdConsecutiveFloorRejected` |
+| PASS | `Validator.Schema_TagsMustBeWhitelisted` |
+| PASS | `Validator.Schema_WeightsMustSumToOne` |
+| PASS | `Validator.ValidIntent_PassesAllFourGates` |
 
 测试源码位于 `UnrealProject/Source/ShanHaiMirror/Tests/`，命名空间 `SHM.Director`。
 
-> 注：本套测试覆盖画像分析器（链路第 ② 步）。
-> 行为记录器（第 ① 步）尚无测试，导演核心（第 ③-⑥ 步）尚未实现。
+> 注：DirectorCore 编排层（③⑤⑥串联）经由控制台命令 `SHM.DumpDecision` 在
+> 真实 GameInstance 中验证（headless 运行日志），未做独立单测——其逻辑是对
+> 已单测组件的顺序调用。
