@@ -1,0 +1,11 @@
+Name,RuleTag,Level,Multiplier,Cost,ConflictsWith
+Ammo_light,Rule.Ammo,light,0.85,10,"(GameplayTags=((TagName=""Rule.RangedDamage"")))"
+Ammo_medium,Rule.Ammo,medium,0.70,20,"(GameplayTags=((TagName=""Rule.RangedDamage"")))"
+Cooldown_light,Rule.Cooldown,light,1.15,10,
+Cooldown_medium,Rule.Cooldown,medium,1.30,20,
+Heal_light,Rule.Heal,light,0.85,10,
+Heal_medium,Rule.Heal,medium,0.70,20,
+MeleeDamage_light,Rule.MeleeDamage,light,0.90,10,
+MeleeDamage_medium,Rule.MeleeDamage,medium,0.80,20,
+RangedDamage_light,Rule.RangedDamage,light,0.90,10,"(GameplayTags=((TagName=""Rule.Ammo"")))"
+RangedDamage_medium,Rule.RangedDamage,medium,0.80,20,"(GameplayTags=((TagName=""Rule.Ammo"")))"
