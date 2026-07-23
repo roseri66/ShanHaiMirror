@@ -20,8 +20,8 @@
 
 | 项 | 值 |
 |---|---|
-| 运行时间 | 2026-07-23 20:52 |
-| 结果 | **29 / 29 通过** |
+| 运行时间 | 2026-07-23 22:51 |
+| 结果 | **30 / 30 通过** |
 | 退出码 | 0 |
 | 运行依赖 | 无需 World / PIE / 网络（被测对象为纯函数/纯逻辑）|
 
@@ -32,6 +32,7 @@
 | PASS | `LocalProvider.HighPressure_GetsRecovery` |
 | PASS | `LocalProvider.LowConfidence_OnlyLightRules` |
 | PASS | `LocalProvider.RangerProfile_GetsCounterWeights` |
+| PASS | `LocalProvider.VanguardProfile_GetsCounterWeights` |
 | PASS | `ProfileAnalyzer.Analyze_PopulatesAllFiveDimensions` |
 | PASS | `ProfileAnalyzer.ArchetypeChange_ConfidenceResets` |
 | PASS | `ProfileAnalyzer.BalancedWeapons_NoPrimaryBuild` |
