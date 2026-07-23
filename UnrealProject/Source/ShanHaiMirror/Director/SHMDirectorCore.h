@@ -38,6 +38,12 @@ public:
 	// --- 查询（调试/W5 日志用）---
 	const TArray<FDirectorHistoryEntry>& GetDecisionHistory() const { return DecisionHistory; }
 
+	// 当前生效规则的数值查询——玩法作用面（伤害/冷却计算）从这里取倍率。
+	// 未命中返回 1.0（无修改）。这是玩法层消费 FDirectorDecision 的便捷入口，
+	// 不引入新接口：读的仍是最近一次 DecideForFloor 产出的决策。
+	UFUNCTION(BlueprintPure, Category = "AI Director")
+	float GetActiveRuleMultiplier(FGameplayTag RuleTag) const;
+
 	// 挑战预算曲线：F0 = 0（只观察，对齐 GDD「F1 建立画像不调整」），随层深递增
 	static int32 ChallengeBudgetForFloor(int32 FloorIndex);
 
@@ -56,4 +62,7 @@ private:
 	TUniquePtr<ISHMAIProvider> Provider;
 
 	TArray<FDirectorHistoryEntry> DecisionHistory;
+
+	// 最近一次产出的决策（含观察层与安全兜底），规则倍率查询的数据源
+	FDirectorDecision LastDecision;
 };
