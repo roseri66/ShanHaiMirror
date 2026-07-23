@@ -14,8 +14,11 @@ void USHMDirectorCore::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 
-	// 规则表：纯文本 CSV 入库（可 diff），运行时构建 DataTable
-	const FString CsvPath = FPaths::ProjectContentDir() / TEXT("Data/RuleTable.csv");
+	// 规则表：纯文本 CSV 入库（可 diff），运行时构建 DataTable。
+	// 注意路径在 <项目>/Data/ 而不是 Content/——Content 被编辑器自动导入器监视，
+	// 放 CSV 会弹"导入为 DataTable"提示，一旦导入就成了 CSV/uasset 双数据源（踩坑 #13）。
+	// （若日后打包，需把 Data/ 加进 Additional Non-Asset Directories to Package。）
+	const FString CsvPath = FPaths::ProjectDir() / TEXT("Data/RuleTable.csv");
 	RuleTable = FSHMRuleResolver::LoadTableFromCsvFile(CsvPath, this);
 	if (!RuleTable)
 	{
