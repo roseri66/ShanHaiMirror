@@ -142,9 +142,14 @@
 | 模块 | 类型 | 做 | **明确不做** |
 |---|---|---|---|
 | **EventBus** | `UGameInstanceSubsystem` | 广播类型化玩法事件 | 不存状态、不做业务逻辑 |
-| **BehaviorRecorder** | `UWorldSubsystem` | 订阅事件，累积 `FFloorBehaviorSnapshot` | 不分析、不打分、不决策 |
+| **BehaviorRecorder** | `UGameInstanceSubsystem` ¹ | 订阅事件，累积 `FFloorBehaviorSnapshot` | 不分析、不打分、不决策 |
 | **ProfileAnalyzer** | **纯静态函数** | 快照 + 历史 → `FPlayerProfile` | **不碰 UObject、不碰 LLM、不碰随机数** |
-| **DirectorCore** | `UWorldSubsystem` | 编排决策：造约束 → 请求 → 校验 → 映射 | 不直接改游戏对象、不发 HTTP |
+| **DirectorCore** | `UGameInstanceSubsystem` ¹ | 编排决策：造约束 → 请求 → 校验 → 映射 | 不直接改游戏对象、不发 HTTP |
+
+> ¹ **修正（2026-07-23，W2 实施时）**：原设计为 `UWorldSubsystem`。一层跨多个房间会有
+> Level Streaming/切图，World 级生命周期会丢掉层内累积数据与跨层决策历史——而决策历史
+> 既是 Fairness 护栏的输入，也是决策日志（D-17）的数据源，必须活过整个 Run。
+> 故 BehaviorRecorder 与 DirectorCore 均实现为 `UGameInstanceSubsystem`。
 | **IAIProvider** | 接口（3 实现） | 在给定约束内产出 `FDirectorIntent` | **不做校验、不接触具体数值** |
 | **FloorGenerator** | `UObject` | 消费 `FDirectorDecision` 执行 | **不做任何决策** |
 
