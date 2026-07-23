@@ -59,6 +59,11 @@ struct FRuleModifier
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FString Level = "medium"; // light / medium / heavy
 
+	// 已解析的生效数值（RuleResolver 查 DT_Rule 产生，链路第 ⑥ 步）。
+	// 这是全链路里数值第一次出现的地方——Provider 的 FDirectorIntent 里没有它。
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	float Multiplier = 1.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	int32 Cost = 0;
 
