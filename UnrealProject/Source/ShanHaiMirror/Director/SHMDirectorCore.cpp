@@ -103,6 +103,29 @@ FDirectorDecision USHMDirectorCore::DecideForFloor(const FPlayerProfile& Profile
 		return MakeSafeFallbackDecision(TEXT("Provider 未初始化"));
 	}
 
+	// 首层只观察（GDD「F1 建立画像，不调整」）——由代码强制，不进 Provider。
+	// 预算=0 只能挡住规则；挑战等级/配比/台词都出自 Provider 对画像的解读，
+	// 若画像携带数据（合成画像、未来的跨局记忆），Provider 照样会输出"定向反制"，
+	// 语言就在承诺一件首层不该做的事。设计不变量不能依赖"首层画像恰好为空"。
+	if (FloorIndex <= 0)
+	{
+		FDirectorDecision Decision;
+		Decision.ChallengeLevel = EChallengeLevel::Stable;
+		Decision.EnemyWeights.Add(SHMTags::Enemy_Grunt.GetTag(),   0.55f);
+		Decision.EnemyWeights.Add(SHMTags::Enemy_Tank.GetTag(),    0.15f);
+		Decision.EnemyWeights.Add(SHMTags::Enemy_Rush.GetTag(),    0.15f);
+		Decision.EnemyWeights.Add(SHMTags::Enemy_Shooter.GetTag(), 0.15f);
+		Decision.NarrationLine = TEXT("第一层。我只是在看。");
+		Decision.Reason        = TEXT("首层只观察：建立画像，不做任何调整。");
+
+		FDirectorHistoryEntry Entry;
+		Entry.FloorIndex = FloorIndex;
+		DecisionHistory.Add(Entry);
+
+		UE_LOG(LogSHMDirectorCore, Log, TEXT("F%d 观察层：\n%s"), FloorIndex, *DecisionToString(Decision));
+		return Decision;
+	}
+
 	// ③ CONSTRAIN
 	const FDirectorContext Ctx = BuildContext(Profile, FloorIndex);
 
@@ -198,9 +221,25 @@ static FAutoConsoleCommandWithWorldAndArgs GDumpDecisionCmd(
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(
 		[](const TArray<FString>& Args, UWorld* World)
 	{
-		if (!World || !World->GetGameInstance()) { return; }
+		// 失败必须出声——静默的提前返回会让"命令没生效"和"命令没执行"无法区分
+		if (!World)
+		{
+			UE_LOG(LogSHMDirectorCore, Warning, TEXT("SHM.DumpDecision: 无 World 上下文"));
+			return;
+		}
+		if (!World->GetGameInstance())
+		{
+			UE_LOG(LogSHMDirectorCore, Warning,
+				TEXT("SHM.DumpDecision: World '%s' 无 GameInstance——需要在 PIE 运行中执行（先点 Play）"),
+				*World->GetName());
+			return;
+		}
 		USHMDirectorCore* Core = World->GetGameInstance()->GetSubsystem<USHMDirectorCore>();
-		if (!Core) { return; }
+		if (!Core)
+		{
+			UE_LOG(LogSHMDirectorCore, Warning, TEXT("SHM.DumpDecision: DirectorCore 子系统不存在"));
+			return;
+		}
 
 		// 合成画像：ranger = 远程站桩，vanguard = 近战莽夫
 		const bool bVanguard = Args.Num() > 0 && Args[0].Equals(TEXT("vanguard"), ESearchCase::IgnoreCase);
