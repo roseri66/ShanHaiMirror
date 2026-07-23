@@ -332,6 +332,36 @@ bool FSHMLocalProviderCounterTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSHMLocalProviderMeleeCounterTest,
+	"SHM.Director.LocalProvider.VanguardProfile_GetsCounterWeights", Flags)
+bool FSHMLocalProviderMeleeCounterTest::RunTest(const FString& Parameters)
+{
+	// 近战莽夫 + 高置信度 → 定向反制：Shooter（拉开距离消耗）权重必须为正，
+	// 选择近战伤害规则，且产出过自家护栏。
+	// （此前只有远程分支有独立测试，近战分支靠"代码对称性"背书——补齐覆盖）
+	FDirectorContext Ctx = MakeContext();
+	Ctx.Profile = MakeRangerProfile(0.9f);
+	Ctx.Profile.DominantArchetype = SHMTags::Archetype_Vanguard.GetTag();
+	Ctx.Profile.PrimaryBuildTags  = { SHMTags::Build_Melee.GetTag() };
+
+	FSHMLocalProvider Provider;
+	const FDirectorIntent Intent = Provider.RequestIntent(Ctx);
+
+	const float* ShooterW = Intent.EnemyWeights.Find(SHMTags::Enemy_Shooter.GetTag());
+	TestTrue(TEXT("应提高 Shooter 权重（远程消耗近战）"), ShooterW && *ShooterW > 0.3f);
+
+	bool bHasMeleeDamage = false;
+	for (const FRuleIntent& R : Intent.RuleIntents)
+	{
+		if (R.RuleTag == FGameplayTag::RequestGameplayTag("Rule.MeleeDamage")) { bHasMeleeDamage = true; }
+	}
+	TestTrue(TEXT("应选择近战伤害规则针对近战"), bHasMeleeDamage);
+
+	const FValidationResult VR = FSHMDecisionValidator::Validate(Intent, Ctx);
+	TestTrue(TEXT("近战反制产出必须通过全部护栏"), VR.bValid);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSHMLocalProviderRecoveryTest,
 	"SHM.Director.LocalProvider.HighPressure_GetsRecovery", Flags)
 bool FSHMLocalProviderRecoveryTest::RunTest(const FString& Parameters)
