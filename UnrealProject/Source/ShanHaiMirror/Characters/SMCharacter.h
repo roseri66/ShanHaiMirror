@@ -86,8 +86,9 @@ protected:
 	void OnSkill1();
 	void OnSkill2();
 
-	// --- 攻击 ---
+	// --- 攻击（按当前武器的 AttackPattern 分发） ---
 	void PerformMeleeAttack();
+	void PerformRangedAttack();
 
 private:
 	// 攻击冷却

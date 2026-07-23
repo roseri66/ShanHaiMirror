@@ -1,6 +1,6 @@
 #include "SHMRuleResolver.h"
 #include "Engine/DataTable.h"
-#include "Misc/FileHelper.h"
+#include "Framework/SHMCsvTable.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogSHMDirector, Log, All);
 
@@ -42,27 +42,6 @@ FRuleModifier FSHMRuleResolver::Resolve(const FRuleIntent& Intent, const UDataTa
 
 UDataTable* FSHMRuleResolver::LoadTableFromCsvFile(const FString& AbsoluteFilePath, UObject* Outer)
 {
-	FString CsvContent;
-	if (!FFileHelper::LoadFileToString(CsvContent, *AbsoluteFilePath))
-	{
-		UE_LOG(LogSHMDirector, Error, TEXT("RuleResolver: 无法读取规则表 CSV：%s"), *AbsoluteFilePath);
-		return nullptr;
-	}
-
-	UDataTable* Table = NewObject<UDataTable>(Outer);
-	Table->RowStruct = FSHMRuleRow::StaticStruct();
-
-	const TArray<FString> Problems = Table->CreateTableFromCSVString(CsvContent);
-	for (const FString& Problem : Problems)
-	{
-		UE_LOG(LogSHMDirector, Warning, TEXT("RuleResolver: CSV 解析问题：%s"), *Problem);
-	}
-
-	if (Table->GetRowMap().Num() == 0)
-	{
-		UE_LOG(LogSHMDirector, Error, TEXT("RuleResolver: CSV 解析后无任何行：%s"), *AbsoluteFilePath);
-		return nullptr;
-	}
-
-	return Table;
+	// 委托给通用 CSV 加载（第三次开工时泛化，与敌人表共用）
+	return FSHMCsvTable::Load(AbsoluteFilePath, FSHMRuleRow::StaticStruct(), Outer);
 }

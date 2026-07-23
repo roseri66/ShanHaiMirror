@@ -16,6 +16,8 @@
 #include "Framework/SHMBuildComponent.h"
 #include "Framework/SHMEventBus.h"
 #include "Framework/SHMGameplayTags.h"
+#include "Combat/SHMProjectile.h"
+#include "Director/SHMDirectorCore.h"
 
 ASMCharacter::ASMCharacter()
 {
@@ -151,7 +153,17 @@ void ASMCharacter::OnAttack()
 			WeaponComp->GetActiveWeaponTag());
 	}
 
-	PerformMeleeAttack();
+	// 按当前武器的攻击模式分发——武器是数据+模式枚举，不是每把一个类（TDD §2.4）
+	switch (WeaponComp->GetActiveAttackPattern())
+	{
+	case EAttackPattern::Ranged_Shot:
+	case EAttackPattern::Ranged_Pierce:
+		PerformRangedAttack();
+		break;
+	default:
+		PerformMeleeAttack();
+		break;
+	}
 }
 
 void ASMCharacter::PerformMeleeAttack()
@@ -160,7 +172,13 @@ void ASMCharacter::PerformMeleeAttack()
 	const FVector     Forward  = GetActorForwardVector();
 	const float       Range    = 200.f;
 	const float       Angle    = 90.f;
-	const float       Damage   = WeaponComp->GetActiveBaseDamage();
+
+	// 导演规则作用面：近战伤害倍率（无规则生效时为 1.0）
+	float Damage = WeaponComp->GetActiveBaseDamage();
+	if (const USHMDirectorCore* Director = GetGameInstance()->GetSubsystem<USHMDirectorCore>())
+	{
+		Damage *= Director->GetActiveRuleMultiplier(SHMTags::Rule_MeleeDamage.GetTag());
+	}
 
 	TArray<FHitResult> Hits;
 	const bool bHit = UKismetSystemLibrary::SphereTraceMulti(
@@ -183,6 +201,34 @@ void ASMCharacter::PerformMeleeAttack()
 
 	// 命中停顿（Sprint 1 简单实现：播放攻击蒙太奇时挂在 AnimNotify 里暂停 ~0.03s）
 	// S1 先不接入 HitStop，这个由 BP 里挂蒙太奇实现
+}
+
+void ASMCharacter::PerformRangedAttack()
+{
+	// 朝鼠标世界坐标的水平方向发射（twin-stick：射向与移动解耦）
+	FVector Dir = CachedMouseWorldLocation - GetActorLocation();
+	Dir.Z = 0.f;
+	Dir = Dir.IsNearlyZero() ? GetActorForwardVector() : Dir.GetSafeNormal();
+
+	const FVector SpawnLoc = GetActorLocation() + Dir * 80.f;
+
+	FActorSpawnParameters Params;
+	Params.Owner = this;
+	Params.Instigator = this;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	// 导演规则作用面：远程伤害倍率
+	float Damage = WeaponComp->GetActiveBaseDamage();
+	if (const USHMDirectorCore* Director = GetGameInstance()->GetSubsystem<USHMDirectorCore>())
+	{
+		Damage *= Director->GetActiveRuleMultiplier(SHMTags::Rule_RangedDamage.GetTag());
+	}
+
+	if (ASHMProjectile* Proj = GetWorld()->SpawnActor<ASHMProjectile>(
+		ASHMProjectile::StaticClass(), SpawnLoc, Dir.Rotation(), Params))
+	{
+		Proj->InitProjectile(Damage, WeaponComp->GetActiveWeaponTag(), this);
+	}
 }
 
 // ============================================================================

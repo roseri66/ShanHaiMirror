@@ -35,6 +35,19 @@ void USHMDirectorCore::Initialize(FSubsystemCollectionBase& Collection)
 void USHMDirectorCore::ResetRun()
 {
 	DecisionHistory.Empty();
+	LastDecision = FDirectorDecision();
+}
+
+float USHMDirectorCore::GetActiveRuleMultiplier(FGameplayTag RuleTag) const
+{
+	for (const FRuleModifier& Mod : LastDecision.RuleModifiers)
+	{
+		if (Mod.RuleTag == RuleTag)
+		{
+			return Mod.Multiplier;
+		}
+	}
+	return 1.f;   // 未生效的规则 = 无修改
 }
 
 int32 USHMDirectorCore::ChallengeBudgetForFloor(int32 FloorIndex)
@@ -122,6 +135,7 @@ FDirectorDecision USHMDirectorCore::DecideForFloor(const FPlayerProfile& Profile
 		Entry.FloorIndex = FloorIndex;
 		DecisionHistory.Add(Entry);
 
+		LastDecision = Decision;
 		UE_LOG(LogSHMDirectorCore, Log, TEXT("F%d 观察层：\n%s"), FloorIndex, *DecisionToString(Decision));
 		return Decision;
 	}
@@ -170,6 +184,7 @@ FDirectorDecision USHMDirectorCore::DecideForFloor(const FPlayerProfile& Profile
 	}
 	DecisionHistory.Add(Entry);
 
+	LastDecision = Decision;
 	UE_LOG(LogSHMDirectorCore, Log, TEXT("F%d 决策完成：\n%s"), FloorIndex, *DecisionToString(Decision));
 	return Decision;
 }
