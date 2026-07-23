@@ -141,7 +141,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSHMResolverCsvFileTest,
 bool FSHMResolverCsvFileTest::RunTest(const FString& Parameters)
 {
 	// 加载真实入库的 CSV，锁死文件格式（含 GameplayTagContainer 的转义写法）
-	const FString Path = FPaths::ProjectContentDir() / TEXT("Data/RuleTable.csv");
+	// 路径在项目根 Data/ 而非 Content/：避开编辑器自动导入监视（踩坑 #13）
+	const FString Path = FPaths::ProjectDir() / TEXT("Data/RuleTable.csv");
 	UDataTable* Table = FSHMRuleResolver::LoadTableFromCsvFile(Path, GetTransientPackage());
 
 	if (!TestNotNull(TEXT("RuleTable.csv 应能加载"), Table)) { return false; }
