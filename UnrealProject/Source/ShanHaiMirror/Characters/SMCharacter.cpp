@@ -3,6 +3,9 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
+#include "InputAction.h"
+#include "InputMappingContext.h"
+#include "TimerManager.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
@@ -16,6 +19,8 @@
 #include "Framework/SHMBuildComponent.h"
 #include "Framework/SHMEventBus.h"
 #include "Framework/SHMGameplayTags.h"
+#include "Combat/SHMProjectile.h"
+#include "Director/SHMDirectorCore.h"
 
 ASMCharacter::ASMCharacter()
 {
@@ -55,22 +60,89 @@ void ASMCharacter::BeginPlay()
 	{
 		AttributeComp->OnDeath.AddDynamic(this, &ASMCharacter::OnOwnerDeath);
 	}
+
+	// 延迟检查武器切换绑定：等 BP 在 Possessed 里的 AddMappingContext 先完成，
+	// 再查询"有没有按键映射到切换"才准（踩坑 #4 的时序教训）
+	GetWorldTimerManager().SetTimer(BindingCheckTimer, this,
+		&ASMCharacter::EnsureSwitchWeaponBinding, 0.5f, false);
 }
 
 void ASMCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-	// Enhanced Input 绑定
+	// Enhanced Input 绑定。
+	// 资产未配置时必须出声（踩坑 #15：静默跳过让"没绑上"和"逻辑坏了"无法区分）
+	auto WarnIfNull = [](const UInputAction* Asset, const TCHAR* Name)
+	{
+		if (!Asset)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("输入资产 %s 未在蓝图里赋值——该输入不会生效"), Name);
+		}
+		return Asset != nullptr;
+	};
+
 	if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
-		if (IA_Move)         { EnhancedInput->BindAction(IA_Move, ETriggerEvent::Triggered, this, &ASMCharacter::OnMove); }
-		if (IA_Move)         { EnhancedInput->BindAction(IA_Move, ETriggerEvent::Completed, this, &ASMCharacter::OnMove); }
-		if (IA_Attack)       { EnhancedInput->BindAction(IA_Attack, ETriggerEvent::Started, this, &ASMCharacter::OnAttack); }
-		if (IA_Dodge)        { EnhancedInput->BindAction(IA_Dodge, ETriggerEvent::Started, this, &ASMCharacter::OnDodge); }
-		if (IA_SwitchWeapon) { EnhancedInput->BindAction(IA_SwitchWeapon, ETriggerEvent::Started, this, &ASMCharacter::OnSwitchWeapon); }
-		if (IA_Skill1)       { EnhancedInput->BindAction(IA_Skill1, ETriggerEvent::Started, this, &ASMCharacter::OnSkill1); }
-		if (IA_Skill2)       { EnhancedInput->BindAction(IA_Skill2, ETriggerEvent::Started, this, &ASMCharacter::OnSkill2); }
+		if (WarnIfNull(IA_Move, TEXT("IA_Move")))
+		{
+			EnhancedInput->BindAction(IA_Move, ETriggerEvent::Triggered, this, &ASMCharacter::OnMove);
+			EnhancedInput->BindAction(IA_Move, ETriggerEvent::Completed, this, &ASMCharacter::OnMove);
+		}
+		if (WarnIfNull(IA_Attack, TEXT("IA_Attack")))       { EnhancedInput->BindAction(IA_Attack, ETriggerEvent::Started, this, &ASMCharacter::OnAttack); }
+		if (WarnIfNull(IA_Dodge, TEXT("IA_Dodge")))         { EnhancedInput->BindAction(IA_Dodge, ETriggerEvent::Started, this, &ASMCharacter::OnDodge); }
+		if (WarnIfNull(IA_SwitchWeapon, TEXT("IA_SwitchWeapon"))) { EnhancedInput->BindAction(IA_SwitchWeapon, ETriggerEvent::Started, this, &ASMCharacter::OnSwitchWeapon); }
+		// 技能是后续内容，未配置不告警
+		if (IA_Skill1) { EnhancedInput->BindAction(IA_Skill1, ETriggerEvent::Started, this, &ASMCharacter::OnSkill1); }
+		if (IA_Skill2) { EnhancedInput->BindAction(IA_Skill2, ETriggerEvent::Started, this, &ASMCharacter::OnSkill2); }
+	}
+}
+
+void ASMCharacter::EnsureSwitchWeaponBinding()
+{
+	// 武器切换是画像分化的输入源，不能依赖蓝图有没有人配。两种缺口都兜住：
+	//   缺口①：BP 没给 IA_SwitchWeapon 赋值 → 运行时造一个 IA 并绑定
+	//   缺口②：IA 有了但 IMC 里没映射按键 → 运行时补一张映射空格的 IMC
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!PC) { return; }
+
+	UEnhancedInputLocalPlayerSubsystem* Subsystem =
+		ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer());
+	UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent);
+	if (!Subsystem || !EnhancedInput) { return; }
+
+	// 缺口①
+	if (!IA_SwitchWeapon)
+	{
+		FallbackSwitchAction = NewObject<UInputAction>(this, TEXT("IA_SwitchWeapon_Fallback"));
+		FallbackSwitchAction->ValueType = EInputActionValueType::Boolean;
+		EnhancedInput->BindAction(FallbackSwitchAction, ETriggerEvent::Started, this, &ASMCharacter::OnSwitchWeapon);
+		UE_LOG(LogTemp, Warning, TEXT("IA_SwitchWeapon 未配置——已用代码兜底创建并绑定"));
+	}
+
+	const UInputAction* SwitchAction = IA_SwitchWeapon ? IA_SwitchWeapon.Get() : FallbackSwitchAction.Get();
+
+	// 缺口②：查这颗 IA 当前映射了哪些按键。
+	// 注意不只查"有没有"，还要把键位打出来——"有映射但不是空格"（比如当年配的滚轮）
+	// 和"没映射"对玩家是同一种感受，日志必须能区分
+	const TArray<FKey> MappedKeys = Subsystem->QueryKeysMappedToAction(SwitchAction);
+
+	FString KeyList;
+	bool bHasSpace = false;
+	for (const FKey& Key : MappedKeys)
+	{
+		KeyList += Key.GetDisplayName().ToString() + TEXT(" ");
+		bHasSpace |= (Key == EKeys::SpaceBar);
+	}
+	UE_LOG(LogTemp, Log, TEXT("武器切换当前映射键位: %s"),
+		MappedKeys.Num() ? *KeyList : TEXT("（无）"));
+
+	if (!bHasSpace)
+	{
+		FallbackContext = NewObject<UInputMappingContext>(this, TEXT("IMC_SwitchFallback"));
+		FallbackContext->MapKey(SwitchAction, EKeys::SpaceBar);
+		Subsystem->AddMappingContext(FallbackContext, /*Priority=*/10);
+		UE_LOG(LogTemp, Warning, TEXT("空格未映射到武器切换——已用代码兜底补上（原映射保留仍可用）"));
 	}
 }
 
@@ -151,7 +223,17 @@ void ASMCharacter::OnAttack()
 			WeaponComp->GetActiveWeaponTag());
 	}
 
-	PerformMeleeAttack();
+	// 按当前武器的攻击模式分发——武器是数据+模式枚举，不是每把一个类（TDD §2.4）
+	switch (WeaponComp->GetActiveAttackPattern())
+	{
+	case EAttackPattern::Ranged_Shot:
+	case EAttackPattern::Ranged_Pierce:
+		PerformRangedAttack();
+		break;
+	default:
+		PerformMeleeAttack();
+		break;
+	}
 }
 
 void ASMCharacter::PerformMeleeAttack()
@@ -160,7 +242,13 @@ void ASMCharacter::PerformMeleeAttack()
 	const FVector     Forward  = GetActorForwardVector();
 	const float       Range    = 200.f;
 	const float       Angle    = 90.f;
-	const float       Damage   = WeaponComp->GetActiveBaseDamage();
+
+	// 导演规则作用面：近战伤害倍率（无规则生效时为 1.0）
+	float Damage = WeaponComp->GetActiveBaseDamage();
+	if (const USHMDirectorCore* Director = GetGameInstance()->GetSubsystem<USHMDirectorCore>())
+	{
+		Damage *= Director->GetActiveRuleMultiplier(SHMTags::Rule_MeleeDamage.GetTag());
+	}
 
 	TArray<FHitResult> Hits;
 	const bool bHit = UKismetSystemLibrary::SphereTraceMulti(
@@ -183,6 +271,34 @@ void ASMCharacter::PerformMeleeAttack()
 
 	// 命中停顿（Sprint 1 简单实现：播放攻击蒙太奇时挂在 AnimNotify 里暂停 ~0.03s）
 	// S1 先不接入 HitStop，这个由 BP 里挂蒙太奇实现
+}
+
+void ASMCharacter::PerformRangedAttack()
+{
+	// 朝鼠标世界坐标的水平方向发射（twin-stick：射向与移动解耦）
+	FVector Dir = CachedMouseWorldLocation - GetActorLocation();
+	Dir.Z = 0.f;
+	Dir = Dir.IsNearlyZero() ? GetActorForwardVector() : Dir.GetSafeNormal();
+
+	const FVector SpawnLoc = GetActorLocation() + Dir * 80.f;
+
+	FActorSpawnParameters Params;
+	Params.Owner = this;
+	Params.Instigator = this;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	// 导演规则作用面：远程伤害倍率
+	float Damage = WeaponComp->GetActiveBaseDamage();
+	if (const USHMDirectorCore* Director = GetGameInstance()->GetSubsystem<USHMDirectorCore>())
+	{
+		Damage *= Director->GetActiveRuleMultiplier(SHMTags::Rule_RangedDamage.GetTag());
+	}
+
+	if (ASHMProjectile* Proj = GetWorld()->SpawnActor<ASHMProjectile>(
+		ASHMProjectile::StaticClass(), SpawnLoc, Dir.Rotation(), Params))
+	{
+		Proj->InitProjectile(Damage, WeaponComp->GetActiveWeaponTag(), this);
+	}
 }
 
 // ============================================================================
@@ -234,6 +350,19 @@ void ASMCharacter::OnSwitchWeapon()
 		{
 			Bus->BroadcastSimple(SHMTags::Event_Combat_WeaponSwitch, this, NewTag, PrevTag);
 		}
+
+		// 切换反馈：武器没有模型/图标，不提示的话玩家无法知道切换发生了——
+		// "按了没反应"和"切了但看不出来"必须可区分（正式 HUD 是第五次开工的事）
+		if (GEngine)
+		{
+			const bool bNowBow = NewTag == SHMTags::Weapon_Bow.GetTag();
+			GEngine->AddOnScreenDebugMessage(1004, 2.f, bNowBow ? FColor::Yellow : FColor::Orange,
+				FString::Printf(TEXT("【武器】%s"), bNowBow ? TEXT("弓（左键远程射击）") : TEXT("剑（左键近战横扫）")));
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("SwitchWeapon 被调用但武器未变化（副武器未配置？）"));
 	}
 }
 

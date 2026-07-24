@@ -46,6 +46,15 @@ public:
 	void InitFromDataTable(FGameplayTag InArchetypeTag, float InHP, float InSpeed, float InContactDamage,
 		float InAttackRange, float InAttackCooldown, int32 InThreatValue);
 
+	// 从敌人表整行初始化（代码生成的变体走这条：数值 + 原型识别色一步到位）
+	void InitFromRow(const struct FSHMEnemyRow& Row);
+
+	// Shooter 原型的远程攻击（AIController 保距时调用；带冷却，内部自查）
+	void TryRangedAttack(AActor* Target);
+
+	UFUNCTION(BlueprintPure, Category = "Enemy")
+	float GetAttackRange() const { return CachedAttackRange; }
+
 protected:
 	// 内部缓存的 DataTable 数据
 	float CachedAttackRange = 150.f;
@@ -69,4 +78,5 @@ protected:
 
 private:
 	float LastContactDamageTime = -999.f;
+	float LastRangedAttackTime  = -999.f;
 };

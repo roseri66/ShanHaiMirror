@@ -42,4 +42,11 @@ namespace SHMTags
 
 	// --- 能力 ---
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Dodge,             "Ability.Dodge");
+
+	// --- 规则修改器 ---
+	UE_DEFINE_GAMEPLAY_TAG(Rule_Ammo,                 "Rule.Ammo");
+	UE_DEFINE_GAMEPLAY_TAG(Rule_Heal,                 "Rule.Heal");
+	UE_DEFINE_GAMEPLAY_TAG(Rule_Cooldown,             "Rule.Cooldown");
+	UE_DEFINE_GAMEPLAY_TAG(Rule_MeleeDamage,          "Rule.MeleeDamage");
+	UE_DEFINE_GAMEPLAY_TAG(Rule_RangedDamage,         "Rule.RangedDamage");
 }
