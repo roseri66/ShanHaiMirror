@@ -1,6 +1,9 @@
 #include "SHMAbilityComponent.h"
 #include "SHMGameplayTags.h"
+#include "Director/SHMDirectorCore.h"
 #include "GameFramework/Actor.h"
+#include "Engine/World.h"
+#include "Engine/GameInstance.h"
 
 USHMAbilityComponent::USHMAbilityComponent()
 {
@@ -21,8 +24,21 @@ void USHMAbilityComponent::BeginPlay()
 
 bool USHMAbilityComponent::TryDodge(FVector Direction)
 {
+	// 导演规则作用面：冷却倍率（Rule.Cooldown ×1.15 = 闪避变慢 15%）
+	float EffectiveCooldown = DodgeCooldown;
+	if (const UWorld* World = GetWorld())
+	{
+		if (const UGameInstance* GI = World->GetGameInstance())
+		{
+			if (const USHMDirectorCore* Director = GI->GetSubsystem<USHMDirectorCore>())
+			{
+				EffectiveCooldown *= Director->GetActiveRuleMultiplier(SHMTags::Rule_Cooldown.GetTag());
+			}
+		}
+	}
+
 	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
-	if (Now - LastDodgeTime < DodgeCooldown)
+	if (Now - LastDodgeTime < EffectiveCooldown)
 	{
 		return false;
 	}
