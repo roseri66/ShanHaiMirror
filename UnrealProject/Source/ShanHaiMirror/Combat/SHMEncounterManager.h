@@ -40,6 +40,15 @@ private:
 	void PollRoomState();
 	ASHMEnemy* SpawnEnemyOfArchetype(const FGameplayTag& ArchetypeTag, const FVector& Location);
 
+	// 在 Center 周围环形取一个**落在导航网格上**的刷怪点。
+	// 多次尝试并逐步收缩半径；全部失败返回 false（调用方跳过该怪并留日志）。
+	// 不验证落点的教训：平台外刷怪 → 怪坠落永不死 → 房间永不结算，整局卡死。
+	bool FindNavigableSpawnPoint(const FVector& Center, FVector& OutLocation);
+
+	// 本房参考高度：低于它一定幅度的怪视为坠落，清理掉——被击退坠台的怪
+	// 和刷歪的怪一样会卡死结算，轮询时兜底
+	float RoomCenterZ = 0.f;
+
 	UPROPERTY()
 	TObjectPtr<UDataTable> EnemyTable;
 

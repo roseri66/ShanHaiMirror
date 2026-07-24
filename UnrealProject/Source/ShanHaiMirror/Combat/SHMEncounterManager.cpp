@@ -8,6 +8,7 @@
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "NavigationSystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogSHMEncounter, Log, All);
 
@@ -45,13 +46,19 @@ int32 USHMEncounterManager::SpawnRoomWave(const TMap<FGameplayTag, float>& Weigh
 	const TArray<FGameplayTag> Wave =
 		FSHMEncounterMath::BuildWave(Weights, ThreatByArchetype, ThreatBudget, Rand);
 
+	RoomCenterZ = Center.Z;
+
 	int32 Spawned = 0;
 	for (const FGameplayTag& Archetype : Wave)
 	{
-		// 环形随机点：远到玩家有反应时间，近到立刻构成威胁
-		const float Angle  = Rand.FRand() * 2.f * PI;
-		const float Radius = Rand.FRandRange(700.f, 1000.f);
-		const FVector Loc  = Center + FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.f) * Radius;
+		FVector Loc;
+		if (!FindNavigableSpawnPoint(Center, Loc))
+		{
+			UE_LOG(LogSHMEncounter, Warning,
+				TEXT("原型 %s 找不到可导航刷怪点（玩家周围导航网格太小？），本只跳过"),
+				*Archetype.ToString());
+			continue;
+		}
 
 		if (ASHMEnemy* Enemy = SpawnEnemyOfArchetype(Archetype, Loc))
 		{
@@ -109,8 +116,47 @@ int32 USHMEncounterManager::GetAliveCount() const
 	return Count;
 }
 
+bool USHMEncounterManager::FindNavigableSpawnPoint(const FVector& Center, FVector& OutLocation)
+{
+	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	if (!NavSys)
+	{
+		return false;
+	}
+
+	// 由远及近尝试：优先远处（给玩家反应时间），平台小就逐步收缩到近处
+	constexpr int32 MaxAttempts = 10;
+	for (int32 Attempt = 0; Attempt < MaxAttempts; ++Attempt)
+	{
+		const float Shrink = 1.f - (static_cast<float>(Attempt) / MaxAttempts) * 0.7f;  // 1.0 → 0.3
+		const float Angle  = Rand.FRand() * 2.f * PI;
+		const float Radius = Rand.FRandRange(700.f, 1000.f) * Shrink;
+		const FVector Candidate = Center + FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0.f) * Radius;
+
+		// 投影到导航网格：垂直容差放宽（候选点悬在平台上方/下方一点都能吸附回来）
+		FNavLocation Projected;
+		if (NavSys->ProjectPointToNavigation(Candidate, Projected, FVector(150.f, 150.f, 500.f)))
+		{
+			OutLocation = Projected.Location;
+			return true;
+		}
+	}
+	return false;
+}
+
 void USHMEncounterManager::PollRoomState()
 {
+	// 坠落清理：被击退坠台/物理异常掉出平台的怪永远追不到玩家也死不了，
+	// 留着就是死锁。低于本房参考高度一定幅度直接清掉，视为非战斗减员。
+	for (TObjectPtr<ASHMEnemy>& Enemy : AliveEnemies)
+	{
+		if (IsValid(Enemy) && Enemy->GetActorLocation().Z < RoomCenterZ - 600.f)
+		{
+			UE_LOG(LogSHMEncounter, Warning, TEXT("%s 坠出平台，清理（非战斗减员）"), *Enemy->GetName());
+			Enemy->Destroy();
+		}
+	}
+
 	if (GetAliveCount() == 0)
 	{
 		GetWorld()->GetTimerManager().ClearTimer(PollTimer);

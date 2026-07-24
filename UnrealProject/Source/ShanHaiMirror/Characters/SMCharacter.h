@@ -103,4 +103,17 @@ private:
 	// 死亡回调绑定
 	UFUNCTION()
 	void OnOwnerDeath();
+
+	// 武器切换绑定兜底：IA 资产未配置 / IMC 未映射按键时，运行时补一套空格绑定。
+	// BeginPlay 延迟调用（等 BP 的 AddMappingContext 完成后再查询）
+	void EnsureSwitchWeaponBinding();
+
+	// 运行时兜底对象（UPROPERTY 防 GC）
+	UPROPERTY()
+	TObjectPtr<class UInputAction> FallbackSwitchAction;
+
+	UPROPERTY()
+	TObjectPtr<class UInputMappingContext> FallbackContext;
+
+	FTimerHandle BindingCheckTimer;
 };
