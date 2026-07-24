@@ -20,8 +20,8 @@
 
 | 项 | 值 |
 |---|---|
-| 运行时间 | 2026-07-23 22:51 |
-| 结果 | **30 / 30 通过** |
+| 运行时间 | 2026-07-24 15:58 |
+| 结果 | **35 / 35 通过** |
 | 退出码 | 0 |
 | 运行依赖 | 无需 World / PIE / 网络（被测对象为纯函数/纯逻辑）|
 
@@ -29,6 +29,11 @@
 
 | 结果 | 测试 |
 |---|---|
+| PASS | `SHM.Combat.Encounter.BuildWave_RespectsThreatBudget` |
+| PASS | `SHM.Combat.Encounter.Pick_DegenerateInputsSafe` |
+| PASS | `SHM.Combat.Encounter.Pick_DeterministicBuckets` |
+| PASS | `SHM.Combat.Weapon.Switch_NoSubWeaponIsNoOp` |
+| PASS | `SHM.Combat.Weapon.Switch_SwapsActiveWeapon` |
 | PASS | `LocalProvider.HighPressure_GetsRecovery` |
 | PASS | `LocalProvider.LowConfidence_OnlyLightRules` |
 | PASS | `LocalProvider.RangerProfile_GetsCounterWeights` |
