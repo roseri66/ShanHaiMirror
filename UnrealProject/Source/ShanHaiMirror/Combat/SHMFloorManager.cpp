@@ -63,6 +63,25 @@ void USHMFloorManager::StartRoom()
 {
 	if (IsPlayerDead()) { return; }
 
+	// 决策还在路上就再等等——过场时长是「最少等多久」，不是「最多等多久」。
+	// 实测 DeepSeek 单次往返约 3.8s，超过 2.5s 过场；若按时开打，这一层会用垫底
+	// 配比刷怪，LLM 那次调用就白费了。等待封顶 MaxDecisionWaitSeconds 后照常开打。
+	if (bDecisionPending && RoomIndex == 0)
+	{
+		if (DecisionWaitedTime < MaxDecisionWaitSeconds)
+		{
+			DecisionWaitedTime += DecisionPollSeconds;
+			GetWorld()->GetTimerManager().SetTimer(DelayTimer, this,
+				&USHMFloorManager::StartRoom, DecisionPollSeconds, false);
+			return;
+		}
+
+		UE_LOG(LogSHMFloor, Warning,
+			TEXT("等待决策超过 %.1fs，用垫底决策开打（这一层不会体现 AI 调整）"),
+			MaxDecisionWaitSeconds);
+		bDecisionPending = false;
+	}
+
 	APawn* Player = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
 	USHMEncounterManager* Encounter = GetWorld()->GetSubsystem<USHMEncounterManager>();
 	if (!Player || !Encounter)
@@ -150,20 +169,23 @@ void USHMFloorManager::EndFloor()
 		return;
 	}
 
-	// 异步决策：LLM 的 1-2 秒往返被下面这个 2.5 秒层间过场天然掩盖。
-	// 回调必定触发一次（内部三级降级保证），所以不需要"没回调"的兜底分支；
-	// 但仍先用观察层决策垫底，万一回调迟于计时器，玩家也不会撞进一个空决策。
-	CurrentDecision = USHMDirectorCore::MakeObserveFloorDecision();
+	// 异步决策：LLM 往返被层间过场掩盖。先用观察层决策垫底，万一等待超时也不会空决策。
+	// 回调必定触发一次（DirectorCore 内部三级降级保证），不需要"没回调"的分支。
+	CurrentDecision    = USHMDirectorCore::MakeObserveFloorDecision();
+	bDecisionPending   = true;
+	DecisionWaitedTime = 0.f;
 
 	Director->DecideForFloorAsync(Profile, FloorIndex,
 		USHMDirectorCore::FSHMOnDecisionReady::CreateWeakLambda(this,
 			[this](const FDirectorDecision& Decision)
 	{
-		CurrentDecision = Decision;
+		CurrentDecision  = Decision;
+		bDecisionPending = false;
 		ShowDirectorMessage(Decision);
 	}));
 
-	GetWorld()->GetTimerManager().SetTimer(DelayTimer, this, &USHMFloorManager::StartFloor, 2.5f, false);
+	GetWorld()->GetTimerManager().SetTimer(DelayTimer, this,
+		&USHMFloorManager::StartFloor, FloorTransitionSeconds, false);
 }
 
 void USHMFloorManager::ShowDirectorMessage(const FDirectorDecision& Decision) const

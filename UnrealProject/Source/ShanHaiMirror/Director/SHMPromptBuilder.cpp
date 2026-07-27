@@ -32,6 +32,13 @@ FString FSHMPromptBuilder::BuildSystemPrompt()
 		"3. **禁止输出任何数值型的规则强度**：不要 multiplier、不要百分比、不要伤害数字。"
 		"你只负责选「哪条规则、什么等级」，具体数值由游戏系统查表决定。擅自给数值会被丢弃。\n"
 		"4. 你的目标不是把玩家玩死，而是逼他改变打法。玩家挣扎时要收手，顺风时才施压。\n"
+		"\n"
+		"【输出样例】（格式示意，标签请按实际候选集选）\n"
+		"{\"challengeLevel\":\"Counter\","
+		"\"enemyWeights\":{\"Enemy.Grunt\":0.4,\"Enemy.Tank\":0.35,\"Enemy.Rush\":0.25},"
+		"\"ruleIntents\":[{\"tag\":\"Rule.Ammo\",\"level\":\"medium\"}],"
+		"\"narration\":\"你的弓用得很好。但这一层，别指望站在原地。\","
+		"\"reason\":\"高置信度反制远程站桩。\"}\n"
 	);
 }
 
@@ -85,8 +92,22 @@ FString FSHMPromptBuilder::BuildUserPrompt(const FDirectorContext& Context)
 	}
 	for (const FSHMAvailableRule& Rule : Context.AvailableRules)
 	{
-		Out += FString::Printf(TEXT("  tag=%s level=%s cost=%d\n"),
+		Out += FString::Printf(TEXT("  tag=%s level=%s cost=%d"),
 			*Rule.RuleTag.GetTagName().ToString(), *Rule.Level, Rule.Cost);
+
+		// 互斥信息必须一并注入。不给它，LLM 只能盲选，
+		// 实测 DeepSeek 会同时挑「弹药↓ + 远程伤害↓」——对远程玩家是无解组合，
+		// 护栏会拒、然后白白降级一次。候选集要给全，才叫「只给安全选项」。
+		if (!Rule.ConflictsWith.IsEmpty())
+		{
+			Out += TEXT("  【不可与以下规则同时选用：");
+			for (const FGameplayTag& Conflict : Rule.ConflictsWith)
+			{
+				Out += FString::Printf(TEXT(" %s"), *Conflict.GetTagName().ToString());
+			}
+			Out += TEXT("】");
+		}
+		Out += TEXT("\n");
 	}
 
 	// 历史：让 LLM 知道上层做过什么，避免连续针对同一点（Fairness 护栏也会拦，

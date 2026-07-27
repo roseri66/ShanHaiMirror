@@ -27,9 +27,15 @@ FSHMLlmProvider::FSHMLlmProvider()
 	BaseUrl = EnvOrDefault(TEXT("SHM_LLM_BASE_URL"), TEXT("https://api.openai.com/v1"));
 	Model   = EnvOrDefault(TEXT("SHM_LLM_MODEL"),    TEXT("gpt-4o-mini"));
 
-	// 只报告"有没有"，绝不打印 key 本身
-	UE_LOG(LogSHMLlm, Log, TEXT("LLM Provider 初始化：endpoint=%s model=%s key=%s"),
-		*BaseUrl, *Model, ApiKey.IsEmpty() ? TEXT("未配置") : TEXT("已配置"));
+	const FString TimeoutStr = FPlatformMisc::GetEnvironmentVariable(TEXT("SHM_LLM_TIMEOUT"));
+	if (!TimeoutStr.IsEmpty())
+	{
+		TimeoutSeconds = FMath::Max(1.f, FCString::Atof(*TimeoutStr));
+	}
+
+	// 只报告「有没有」，绝不打印 key 本身
+	UE_LOG(LogSHMLlm, Log, TEXT("LLM Provider 初始化：endpoint=%s model=%s timeout=%.0fs key=%s"),
+		*BaseUrl, *Model, TimeoutSeconds, ApiKey.IsEmpty() ? TEXT("未配置") : TEXT("已配置"));
 }
 
 void FSHMLlmProvider::RequestIntentAsync(const FDirectorContext& Context, FSHMOnIntentReady OnDone)

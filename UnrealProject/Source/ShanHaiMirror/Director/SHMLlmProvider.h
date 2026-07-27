@@ -31,9 +31,14 @@ public:
 
 	const FString& GetBaseUrl() const { return BaseUrl; }
 	const FString& GetModel()   const { return Model; }
+	float GetTimeoutSeconds()   const { return TimeoutSeconds; }
 
-	// 超时秒数（层间过场约 2.5s，留一点余量后仍要能兜住）
-	static constexpr float TimeoutSeconds = 5.f;
+	// 默认超时 10 秒。**这个值是实测定的，不是拍的**：
+	// DeepSeek(deepseek-chat) 实测单次往返 3.8~5.0s+，原先设 5s 会频繁误判超时、
+	// 白白降级。可用 SHM_LLM_TIMEOUT 覆盖——换更快的端点时应调小。
+	// 注意与 USHMFloorManager::MaxDecisionWaitSeconds 的关系：那个必须比这个大，
+	// 否则玩法层会先于 LLM 放弃，等待就成了空耗。
+	static constexpr float DefaultTimeoutSeconds = 10.f;
 
 private:
 	void HandleResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bConnectedOk,
@@ -43,7 +48,8 @@ private:
 	// 事后都无法补造。见 Saved/SHMLlmLogs/（已 gitignore）
 	void ArchiveExchange(const FString& RequestBody, const FString& ResponseBody, int32 HttpCode) const;
 
-	FString ApiKey;    // 只在内存，日志里只出现"已配置/未配置"
+	FString ApiKey;    // 只在内存，日志里只出现「已配置/未配置」
 	FString BaseUrl;
 	FString Model;
+	float   TimeoutSeconds = DefaultTimeoutSeconds;
 };
