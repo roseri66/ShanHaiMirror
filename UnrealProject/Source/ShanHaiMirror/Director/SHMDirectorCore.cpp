@@ -489,7 +489,11 @@ bool USHMDirectorCore::ExportDecisionLog(const FString& AbsolutePath) const
 		TJsonWriterFactory<TCHAR, TPrettyJsonPrintPolicy<TCHAR>>::Create(&Out);
 	FJsonSerializer::Serialize(Root.ToSharedRef(), Writer);
 
-	const bool bSaved = FFileHelper::SaveStringToFile(Out, *AbsolutePath);
+	// **必须 UTF-8**：SaveStringToFile 遇到非 ASCII（我们的中文台词）默认写 UTF-16 LE，
+	// UE 自己读没问题，但 JSON 交换标准是 UTF-8——网页端 fetch().json()、
+	// Python json.load 都会直接失败。P3 承诺的「三方共用一份格式」在编码上也得成立。
+	const bool bSaved = FFileHelper::SaveStringToFile(Out, *AbsolutePath,
+		FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
 	UE_LOG(LogSHMDirectorCore, Log, TEXT("决策日志导出%s：%s（%d 层）"),
 		bSaved ? TEXT("成功") : TEXT("失败"), *AbsolutePath, LogEntries.Num());
 	return bSaved;

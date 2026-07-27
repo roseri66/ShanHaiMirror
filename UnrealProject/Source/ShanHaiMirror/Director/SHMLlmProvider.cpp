@@ -163,5 +163,7 @@ void FSHMLlmProvider::ArchiveExchange(const FString& RequestBody, const FString&
 	Archive += TEXT("--- REQUEST ---\n") + RequestBody + TEXT("\n");
 	Archive += TEXT("--- RESPONSE ---\n") + ResponseBody + TEXT("\n");
 
-	FFileHelper::SaveStringToFile(Archive, *(Dir / FString::Printf(TEXT("%s.txt"), *Stamp)));
+	// UTF-8：留档要能被 grep / python / 前端直接读（同决策日志，见 ExportDecisionLog）
+	FFileHelper::SaveStringToFile(Archive, *(Dir / FString::Printf(TEXT("%s.txt"), *Stamp)),
+		FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
 }
