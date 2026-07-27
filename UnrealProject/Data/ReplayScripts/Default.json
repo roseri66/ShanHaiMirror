@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "runId": "demo-ranger-3floors",
+  "startedAt": "2026-07-27T00:00:00Z",
+  "totalFloors": 3,
+  "_comment": "演示用回放脚本：一个全程用弓的玩家。F0 观察、F1 试探、F2 定向反制。格式 = 决策日志的子集（只保留回放所需的 rawIntent），真实对局导出的日志可直接当脚本用。",
+  "floors": [
+    {
+      "floorIndex": 0,
+      "rawIntent": {
+        "challengeLevel": "Stable",
+        "enemyWeights": { "Enemy.Grunt": 0.55, "Enemy.Tank": 0.15, "Enemy.Rush": 0.15, "Enemy.Shooter": 0.15 },
+        "ruleIntents": [],
+        "narration": "第一层。我只是在看。",
+        "reason": "首层只观察：建立画像，不做任何调整。"
+      }
+    },
+    {
+      "floorIndex": 1,
+      "rawIntent": {
+        "challengeLevel": "Pressure",
+        "enemyWeights": { "Enemy.Grunt": 0.45, "Enemy.Tank": 0.25, "Enemy.Rush": 0.20, "Enemy.Shooter": 0.10 },
+        "ruleIntents": [ { "tag": "Rule.Ammo", "level": "light" } ],
+        "narration": "你偏爱远处。我记下了。",
+        "reason": "画像初现远程倾向，轻度试探。"
+      }
+    },
+    {
+      "floorIndex": 2,
+      "rawIntent": {
+        "challengeLevel": "Counter",
+        "enemyWeights": { "Enemy.Grunt": 0.40, "Enemy.Tank": 0.30, "Enemy.Rush": 0.20, "Enemy.Shooter": 0.10 },
+        "ruleIntents": [ { "tag": "Rule.Cooldown", "level": "medium" } ],
+        "narration": "你的弓用得很好。但这一层，别指望站在原地。",
+        "reason": "高置信度定向反制远程打法：压缩输出空间并施加移动压力。"
+      }
+    }
+  ]
+}

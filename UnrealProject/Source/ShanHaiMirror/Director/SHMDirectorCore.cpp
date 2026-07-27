@@ -150,10 +150,12 @@ FDirectorDecision USHMDirectorCore::DecideForFloor(const FPlayerProfile& Profile
 	const FValidationResult Validation = FSHMDecisionValidator::Validate(Intent, Ctx);
 	if (!Validation.bValid)
 	{
-		for (const FString& Reason : Validation.RejectReasons)
+		for (const FSHMValidationViolation& Violation : Validation.Violations)
 		{
-			UE_LOG(LogSHMDirectorCore, Error, TEXT("[%s] 决策被护栏拒绝：%s"),
-				*Provider->GetProviderName(), *Reason);
+			UE_LOG(LogSHMDirectorCore, Error, TEXT("[%s] 决策被 %s 护栏拒绝：%s"),
+				*Provider->GetProviderName(),
+				*UEnum::GetDisplayValueAsText(Violation.Guard).ToString(),
+				*Violation.Detail);
 		}
 		return MakeSafeFallbackDecision(TEXT("护栏拒绝，降级安全决策"));
 	}

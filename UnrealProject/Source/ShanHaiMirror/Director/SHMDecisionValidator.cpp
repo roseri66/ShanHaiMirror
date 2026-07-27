@@ -2,10 +2,14 @@
 
 namespace
 {
-	void Reject(FValidationResult& InOut, FString Reason)
+	// 每条违规都带上是哪一道护栏拦的——分道统计与回放 UI 的数据源
+	void Reject(FValidationResult& InOut, ESHMGuardrail Guard, FString Detail)
 	{
 		InOut.bValid = false;
-		InOut.RejectReasons.Add(MoveTemp(Reason));
+		FSHMValidationViolation Violation;
+		Violation.Guard  = Guard;
+		Violation.Detail = MoveTemp(Detail);
+		InOut.Violations.Add(MoveTemp(Violation));
 	}
 
 	bool IsLegalLevel(const FString& Level)
@@ -44,29 +48,29 @@ void FSHMDecisionValidator::CheckSchema(const FDirectorIntent& Intent, const FDi
 	{
 		if (!Context.AvailableArchetypes.Contains(Pair.Key))
 		{
-			Reject(InOut, FString::Printf(TEXT("[Schema] 原型 %s 不在白名单"), *Pair.Key.ToString()));
+			Reject(InOut, ESHMGuardrail::Schema, FString::Printf(TEXT("[Schema] 原型 %s 不在白名单"), *Pair.Key.ToString()));
 		}
 		if (Pair.Value < 0.f || Pair.Value > 1.f)
 		{
-			Reject(InOut, FString::Printf(TEXT("[Schema] 原型 %s 权重 %.2f 越界"), *Pair.Key.ToString(), Pair.Value));
+			Reject(InOut, ESHMGuardrail::Schema, FString::Printf(TEXT("[Schema] 原型 %s 权重 %.2f 越界"), *Pair.Key.ToString(), Pair.Value));
 		}
 		WeightSum += Pair.Value;
 	}
 
 	if (!FMath::IsNearlyEqual(WeightSum, 1.f, WeightSumTolerance))
 	{
-		Reject(InOut, FString::Printf(TEXT("[Schema] 权重和 %.3f ≠ 1"), WeightSum));
+		Reject(InOut, ESHMGuardrail::Schema, FString::Printf(TEXT("[Schema] 权重和 %.3f ≠ 1"), WeightSum));
 	}
 
 	for (const FRuleIntent& Rule : Intent.RuleIntents)
 	{
 		if (!IsLegalLevel(Rule.Level))
 		{
-			Reject(InOut, FString::Printf(TEXT("[Schema] 非法等级 '%s'"), *Rule.Level));
+			Reject(InOut, ESHMGuardrail::Schema, FString::Printf(TEXT("[Schema] 非法等级 '%s'"), *Rule.Level));
 		}
 		else if (!FindAvailable(Context, Rule))
 		{
-			Reject(InOut, FString::Printf(TEXT("[Schema] 规则 %s/%s 不在候选集"),
+			Reject(InOut, ESHMGuardrail::Schema, FString::Printf(TEXT("[Schema] 规则 %s/%s 不在候选集"),
 				*Rule.RuleTag.ToString(), *Rule.Level));
 		}
 	}
@@ -89,7 +93,7 @@ void FSHMDecisionValidator::CheckBudget(const FDirectorIntent& Intent, const FDi
 
 	if (TotalCost > Context.ChallengeBudget)
 	{
-		Reject(InOut, FString::Printf(TEXT("[Budget] Σcost %d 超出预算 %d"),
+		Reject(InOut, ESHMGuardrail::Budget, FString::Printf(TEXT("[Budget] Σcost %d 超出预算 %d"),
 			TotalCost, Context.ChallengeBudget));
 	}
 }
@@ -116,7 +120,7 @@ void FSHMDecisionValidator::CheckConflict(const FDirectorIntent& Intent, const F
 
 			if (bClash)
 			{
-				Reject(InOut, FString::Printf(TEXT("[Conflict] %s 与 %s 互斥"),
+				Reject(InOut, ESHMGuardrail::Conflict, FString::Printf(TEXT("[Conflict] %s 与 %s 互斥"),
 					*AvailI->RuleTag.ToString(), *AvailJ->RuleTag.ToString()));
 			}
 		}
@@ -146,7 +150,7 @@ void FSHMDecisionValidator::CheckFairness(const FDirectorIntent& Intent, const F
 
 			if (bInAllRecent)
 			{
-				Reject(InOut, FString::Printf(TEXT("[Fairness] %s 已连续 %d 层，不得连续第 %d 层"),
+				Reject(InOut, ESHMGuardrail::Fairness, FString::Printf(TEXT("[Fairness] %s 已连续 %d 层，不得连续第 %d 层"),
 					*Rule.RuleTag.ToString(), MaxConsecutiveFloors, MaxConsecutiveFloors + 1));
 			}
 		}
@@ -159,7 +163,7 @@ void FSHMDecisionValidator::CheckFairness(const FDirectorIntent& Intent, const F
 		{
 			if (Rule.Level == TEXT("heavy"))
 			{
-				Reject(InOut, FString::Printf(TEXT("[Fairness] 置信度 %.2f < %.2f，禁止重度规则 %s"),
+				Reject(InOut, ESHMGuardrail::Fairness, FString::Printf(TEXT("[Fairness] 置信度 %.2f < %.2f，禁止重度规则 %s"),
 					Context.Profile.Confidence, MinConfidenceForHeavy, *Rule.RuleTag.ToString()));
 			}
 		}

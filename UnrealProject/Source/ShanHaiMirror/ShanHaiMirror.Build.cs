@@ -16,7 +16,11 @@ public class ShanHaiMirror : ModuleRules
 			"AIModule",
 			"GameplayTasks",
 			"NavigationSystem",
-			"GameplayTags"
+			"GameplayTags",
+			// LLM 层（第四次开工）：HTTP 调用 + JSON 解析
+			"HTTP",
+			"Json",
+			"JsonUtilities"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {

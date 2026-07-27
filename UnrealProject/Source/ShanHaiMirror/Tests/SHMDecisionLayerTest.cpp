@@ -178,6 +178,7 @@ bool FSHMValidatorSchemaWeightsTest::RunTest(const FString& Parameters)
 
 	FValidationResult R; FSHMDecisionValidator::CheckSchema(Intent, Ctx, R);
 	TestFalse(TEXT("权重和≠1 应被拒绝"), R.bValid);
+	TestTrue(TEXT("应由 Schema 护栏拦下"), R.HasViolation(ESHMGuardrail::Schema));
 	return true;
 }
 
@@ -193,6 +194,7 @@ bool FSHMValidatorSchemaWhitelistTest::RunTest(const FString& Parameters)
 	Intent1.EnemyWeights.Add(FGameplayTag::RequestGameplayTag("Enemy.Boss"), 1.0f);
 	FValidationResult R1; FSHMDecisionValidator::CheckSchema(Intent1, Ctx, R1);
 	TestFalse(TEXT("白名单外的原型应被拒绝"), R1.bValid);
+	TestTrue(TEXT("应由 Schema 护栏拦下"), R1.HasViolation(ESHMGuardrail::Schema));
 
 	// 不在候选集里的规则（Heal 只开放了 light，medium 未开放）
 	FDirectorIntent Intent2 = MakeValidIntent();
@@ -201,6 +203,7 @@ bool FSHMValidatorSchemaWhitelistTest::RunTest(const FString& Parameters)
 	Intent2.RuleIntents.Add(RI);
 	FValidationResult R2; FSHMDecisionValidator::CheckSchema(Intent2, Ctx, R2);
 	TestFalse(TEXT("候选集外的规则(标签+等级)应被拒绝"), R2.bValid);
+	TestTrue(TEXT("应由 Schema 护栏拦下"), R2.HasViolation(ESHMGuardrail::Schema));
 	return true;
 }
 
@@ -216,6 +219,7 @@ bool FSHMValidatorBudgetTest::RunTest(const FString& Parameters)
 
 	FValidationResult R; FSHMDecisionValidator::CheckBudget(Intent, Ctx, R);
 	TestFalse(TEXT("Σcost 超预算应被拒绝"), R.bValid);
+	TestTrue(TEXT("应由 Budget 护栏拦下"), R.HasViolation(ESHMGuardrail::Budget));
 
 	// 预算 55 → 过
 	FDirectorContext CtxOk = MakeContext(/*Budget=*/55);
@@ -237,6 +241,7 @@ bool FSHMValidatorConflictTest::RunTest(const FString& Parameters)
 
 	FValidationResult R; FSHMDecisionValidator::CheckConflict(Intent, Ctx, R);
 	TestFalse(TEXT("互斥规则对应被拒绝"), R.bValid);
+	TestTrue(TEXT("应由 Conflict 护栏拦下"), R.HasViolation(ESHMGuardrail::Conflict));
 
 	// 单独一条不冲突
 	FDirectorIntent Ok = MakeValidIntent();
@@ -260,6 +265,7 @@ bool FSHMValidatorFairnessConsecutiveTest::RunTest(const FString& Parameters)
 	FDirectorIntent Intent = MakeValidIntent(); // 含 Ammo
 	FValidationResult R; FSHMDecisionValidator::CheckFairness(Intent, Ctx, R);
 	TestFalse(TEXT("同一规则连续第 3 层应被拒绝"), R.bValid);
+	TestTrue(TEXT("应由 Fairness 护栏拦下"), R.HasViolation(ESHMGuardrail::Fairness));
 
 	// 只连续 1 层则允许
 	Ctx.DecisionHistory = { H1 };
@@ -283,6 +289,7 @@ bool FSHMValidatorFairnessHeavyTest::RunTest(const FString& Parameters)
 
 	FValidationResult R; FSHMDecisionValidator::CheckFairness(Intent, Ctx, R);
 	TestFalse(TEXT("低置信度 + 重度规则应被拒绝"), R.bValid);
+	TestTrue(TEXT("应由 Fairness 护栏拦下"), R.HasViolation(ESHMGuardrail::Fairness));
 	return true;
 }
 
@@ -295,7 +302,39 @@ bool FSHMValidatorAllPassTest::RunTest(const FString& Parameters)
 	const FValidationResult R = FSHMDecisionValidator::Validate(MakeValidIntent(), Ctx);
 
 	TestTrue(TEXT("合法 Intent 应通过全部护栏"), R.bValid);
-	TestEqual(TEXT("不应有任何拒绝原因"), R.RejectReasons.Num(), 0);
+	TestEqual(TEXT("不应有任何违规"), R.Violations.Num(), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FSHMValidatorAttributionTest,
+	"SHM.Director.Validator.MultiViolation_AttributedToCorrectGuards", Flags)
+bool FSHMValidatorAttributionTest::RunTest(const FString& Parameters)
+{
+	// 一个"什么都犯"的 Intent：四道护栏应各自认领自己的违规，不串道。
+	// 这是分道统计（"Fairness 拦了 N 次"）与回放 UI 逐条绿/红的正确性基础——
+	// 归属错了，后面所有基于它的数字和可视化都是错的。
+	FDirectorContext Ctx = MakeContext(/*Budget=*/15, /*Confidence=*/0.5f);
+	const FGameplayTag Ammo = FGameplayTag::RequestGameplayTag("Rule.Ammo");
+	FDirectorHistoryEntry H0; H0.FloorIndex = 0; H0.AppliedRuleTags = { Ammo };
+	FDirectorHistoryEntry H1; H1.FloorIndex = 1; H1.AppliedRuleTags = { Ammo };
+	Ctx.DecisionHistory = { H0, H1 };
+
+	FDirectorIntent Intent;
+	Intent.EnemyWeights.Add(SHMTags::Enemy_Grunt.GetTag(), 0.9f);   // Schema：权重和 ≠ 1
+	FRuleIntent A; A.RuleTag = Ammo; A.Level = TEXT("medium");       // Budget 20 > 15；Fairness 连续第 3 层
+	FRuleIntent B; B.RuleTag = FGameplayTag::RequestGameplayTag("Rule.RangedDamage"); B.Level = TEXT("medium");
+	Intent.RuleIntents = { A, B };                                   // Conflict：与 Ammo 互斥
+
+	const FValidationResult R = FSHMDecisionValidator::Validate(Intent, Ctx);
+
+	TestFalse(TEXT("应被拒绝"), R.bValid);
+	TestTrue(TEXT("Schema 应认领权重和违规"),   R.HasViolation(ESHMGuardrail::Schema));
+	TestTrue(TEXT("Budget 应认领超预算违规"),   R.HasViolation(ESHMGuardrail::Budget));
+	TestTrue(TEXT("Conflict 应认领互斥违规"),   R.HasViolation(ESHMGuardrail::Conflict));
+	TestTrue(TEXT("Fairness 应认领连续层违规"), R.HasViolation(ESHMGuardrail::Fairness));
+
+	// 详情文本仍原样保留（枚举是新增维度，不是替代）
+	TestEqual(TEXT("详情条数应与违规条数一致"), R.GetAllDetails().Num(), R.Violations.Num());
 	return true;
 }
 
