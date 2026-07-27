@@ -149,13 +149,15 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | `ProfileAnalyzer`（链路 ②，五维） | ✅ 已完成 |
 | `DirectorCore` + 四道护栏（链路 ③⑤⑥） | ✅ 已完成 · Intent/Decision 类型分离 · 规则表 CSV 查表 |
 | `IAIProvider`（链路 ④） | 🟡 `FSHMLocalProvider` 已完成（降级终点，单独即完整导演）；Llm / Replay 两实现计划中 |
-| 单元测试（画像 + 护栏 + Provider + 遭遇抽样 + 武器） | ✅ **35/35 全绿** · [`Docs/TestResults.md`](Docs/TestResults.md) |
-| 决策链路端到端 | ✅ 控制台 `SHM.DumpDecision` 手喂画像打印完整决策 |
+| 单元测试（画像 + 护栏 + Provider + 遭遇 + 武器 + JSON + 回放） | ✅ **52/52 全绿** · [`Docs/TestResults.md`](Docs/TestResults.md) |
+| 决策链路端到端 | ✅ 控制台 `SHM.DumpDecision` / `SHM.DumpDecisionAsync` |
 | 武器切换 + 弓（画像分化的输入源） | ✅ 已完成 · 攻击按 AttackPattern 分发 |
 | 敌人四原型 + 遭遇系统消费敌人权重 | ✅ 已完成 · 数据驱动（CSV）· 刷怪点导航网格投影 |
 | **闭环端到端可玩** | ✅ 打一局 3 层：真实行为 → 画像 → 决策 → 下层刷怪与规则生效，肉眼可见被针对 |
-| 决策日志 + 导演报告 UI（链路 ⑦） | ⬜ 未开始（当前用屏显台词占位） |
-| `IAIProvider` 的 LLM / Replay 实现 | ⬜ 未开始（本地 Provider 已是完整可玩降级终点） |
+| `IAIProvider` 三实现（链路 ④） | ✅ Local（降级终点）· **Llm**（OpenAI 兼容，异步）· **Replay**（确定性回放） |
+| **三级降级链路** | ✅ Provider 失败 → 护栏拒绝 → 安全兜底，每级留日志；**无 key/断网完整可玩** |
+| 决策日志（含护栏前 RawIntent + 溯源） | ✅ 一局结束自动导出 JSON（`schemaVersion` 契约，回放/可视化共用） |
+| 导演报告 UI（链路 ⑦） | ⬜ 未开始（当前用屏显台词占位） |
 
 开发过程记录：[`Docs/Sprint开发总结.md`](Docs/Sprint开发总结.md)（复盘，含设计判断与修复教训）· [`Docs/踩坑记录.md`](Docs/踩坑记录.md)（17 条，每条含现象/原因/解法/规则）
 
