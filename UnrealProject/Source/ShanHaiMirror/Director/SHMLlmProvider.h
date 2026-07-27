@@ -1,0 +1,49 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "SHMAIProvider.h"
+#include "Interfaces/IHttpRequest.h"
+
+// ============================================================================
+// LLM Provider —— OpenAI 兼容 HTTP 端点
+//
+// **它是可失败的，而且失败被视为正常路径**：超时、非 200、畸形 JSON、
+// 模型拒答，一律回调 bSuccess=false，由 DirectorCore 降级到本地表。
+// 玩家对此零感知——这正是"断网完整可玩"这个卖点的实现方式。
+//
+// 配置（全部走环境变量，**key 绝不入库、绝不进日志**）：
+//   SHM_LLM_API_KEY   必填。为空时 IsAvailable()=false，DirectorCore 直接选本地
+//   SHM_LLM_BASE_URL  选填，默认 https://api.openai.com/v1
+//                     ——做成可配置是刻意的：将来把它指向自建中转服务，
+//                       本类一行代码都不用改
+//   SHM_LLM_MODEL     选填，默认 gpt-4o-mini
+// ============================================================================
+class SHANHAIMIRROR_API FSHMLlmProvider : public ISHMAIProvider
+{
+public:
+	FSHMLlmProvider();
+
+	virtual void RequestIntentAsync(const FDirectorContext& Context, FSHMOnIntentReady OnDone) override;
+	virtual FString GetProviderName() const override { return TEXT("Llm"); }
+
+	// key 是否就位。false 时 DirectorCore 不该选它
+	bool IsAvailable() const { return !ApiKey.IsEmpty(); }
+
+	const FString& GetBaseUrl() const { return BaseUrl; }
+	const FString& GetModel()   const { return Model; }
+
+	// 超时秒数（层间过场约 2.5s，留一点余量后仍要能兜住）
+	static constexpr float TimeoutSeconds = 5.f;
+
+private:
+	void HandleResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bConnectedOk,
+	                    FSHMOnIntentReady OnDone, double StartTime);
+
+	// 把请求/响应原文落盘（脱敏）——回放脚本、前端样例、"LLM 怎么翻车的"真实案例，
+	// 事后都无法补造。见 Saved/SHMLlmLogs/（已 gitignore）
+	void ArchiveExchange(const FString& RequestBody, const FString& ResponseBody, int32 HttpCode) const;
+
+	FString ApiKey;    // 只在内存，日志里只出现"已配置/未配置"
+	FString BaseUrl;
+	FString Model;
+};

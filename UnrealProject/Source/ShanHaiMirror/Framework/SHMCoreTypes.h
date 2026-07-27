@@ -72,6 +72,42 @@ struct FRuleModifier
 };
 
 // ============================================================================
+// 决策溯源 —— 这条决策是谁、怎么、花多久做出来的
+//
+// 只放**可序列化的标量摘要**，不放 RawIntent / ValidationResult 那些 Director
+// 内部类型：FDirectorDecision 是 AI 层与玩法层的唯一接口，把内部诊断结构塞进来
+// 会让玩法层被迫认识 Director 的内部类型（也会造成头文件循环依赖）。
+// 完整的「护栏前 Intent + 四道护栏判定」由 DirectorCore 写进决策日志 JSON，
+// 那里才是它们的归属。
+//
+// 这些字段必须在决策发生的那一刻填，事后无法补造。
+// ============================================================================
+USTRUCT(BlueprintType)
+struct FDirectorTrace
+{
+	GENERATED_BODY()
+
+	// 这条决策出自谁：Local / Llm / Replay
+	UPROPERTY(BlueprintReadOnly)
+	FString ProviderId = TEXT("Local");
+
+	// 是否发生降级（LLM 失败或被护栏拒绝后回退本地）
+	UPROPERTY(BlueprintReadOnly)
+	bool bDegraded = false;
+
+	UPROPERTY(BlueprintReadOnly)
+	FString DegradeReason;
+
+	// 决策耗时（毫秒）。佐证「LLM 延迟被层间过场掩盖，不阻塞战斗帧」
+	UPROPERTY(BlueprintReadOnly)
+	float ElapsedMs = 0.f;
+
+	// 护栏拦截数（分道明细在决策日志里，这里只留计数供快速统计）
+	UPROPERTY(BlueprintReadOnly)
+	int32 ViolationCount = 0;
+};
+
+// ============================================================================
 // AI Director 的完整决策输出 —— 这是 AI 层与玩法层的唯一接口
 // ============================================================================
 USTRUCT(BlueprintType)
@@ -105,6 +141,10 @@ struct FDirectorDecision
 	// 内部调试用
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FString Reason;
+
+	// 决策溯源（谁出的、有没有降级、耗时多久）
+	UPROPERTY(BlueprintReadOnly)
+	FDirectorTrace Trace;
 };
 
 // ============================================================================

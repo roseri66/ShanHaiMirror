@@ -27,8 +27,15 @@ class SHANHAIMIRROR_API USHMDirectorCore : public UGameInstanceSubsystem
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 
-	// 主入口：给定画像与层号，产出玩法层可直接消费的决策。
-	// 内部完成：建上下文 → Provider 选择 → 四护栏校验 → 查表出数值 → 记历史。
+	// 决策就绪回调
+	DECLARE_DELEGATE_OneParam(FSHMOnDecisionReady, const FDirectorDecision& /*Decision*/);
+
+	// 主入口（异步）：建上下文 → Provider 取 Intent → 四护栏 → 查表出数值 → 回调。
+	// 本地/回放 Provider 会在调用内立即回调；LLM 在响应返回时回调。
+	// **任何一级失败都降级，回调必定被调用一次**——调用方不需要处理"没回调"的情况。
+	void DecideForFloorAsync(const FPlayerProfile& Profile, int32 FloorIndex, FSHMOnDecisionReady OnDecision);
+
+	// 同步入口：强制走本地 Provider（控制台调试/单测用，不发网络）
 	FDirectorDecision DecideForFloor(const FPlayerProfile& Profile, int32 FloorIndex);
 
 	// Run 重开时清空决策历史
@@ -50,19 +57,49 @@ public:
 	// 决策转可读文本（DumpDecision 与 W5 报告 UI 共用）
 	static FString DecisionToString(const FDirectorDecision& Decision);
 
+	// 决策日志：整局的「看到什么→判断什么→改了什么」，可导出 JSON
+	// （P3 格式，回放 Provider 与后续可视化共用）
+	UFUNCTION(BlueprintCallable, Category = "AI Director")
+	bool ExportDecisionLog(const FString& AbsolutePath) const;
+
+	// 首层观察决策（代码强制，不进 Provider）。
+	// 公开是因为 FloorManager 也用它做异步回调到达前的垫底值。
+	static FDirectorDecision MakeObserveFloorDecision();
+
+	// 当前生效的 Provider 名（Local / Llm / Replay）
+	UFUNCTION(BlueprintPure, Category = "AI Director")
+	FString GetProviderName() const { return Provider ? Provider->GetProviderName() : TEXT("None"); }
+
 private:
 	FDirectorContext BuildContext(const FPlayerProfile& Profile, int32 FloorIndex) const;
 
+	// Intent 就绪后的公共收尾：护栏 → 查表 → 记历史/日志 → 回调
+	void FinishDecision(const FDirectorContext& Context, const FDirectorIntent& Intent,
+	                    const FString& ProviderId, bool bDegraded, const FString& DegradeReason,
+	                    float ElapsedMs, FSHMOnDecisionReady OnDecision);
+
 	// 校验失败时的安全兜底：全杂兵、零规则——宁可保守，不可违规
 	FDirectorDecision MakeSafeFallbackDecision(const FString& Reason) const;
+
+	// 记一层决策进日志（含护栏前 RawIntent 与护栏判定，事后无法补造）
+	void RecordLogEntry(const FDirectorContext& Context, const FDirectorIntent& RawIntent,
+	                    const FValidationResult& Validation, const FDirectorDecision& Decision);
 
 	UPROPERTY()
 	TObjectPtr<UDataTable> RuleTable;
 
 	TUniquePtr<ISHMAIProvider> Provider;
 
+	// 降级终点：永远可用，不参与 Provider 选择（Provider 失败时直接调它）
+	TUniquePtr<class FSHMLocalProvider> LocalFallback;
+
 	TArray<FDirectorHistoryEntry> DecisionHistory;
 
 	// 最近一次产出的决策（含观察层与安全兜底），规则倍率查询的数据源
 	FDirectorDecision LastDecision;
+
+	// 整局决策日志（JSON 对象数组，导出时套上顶层信封）
+	TArray<TSharedPtr<class FJsonObject>> LogEntries;
+	FString RunId;
+	FString RunStartedAt;
 };

@@ -21,8 +21,12 @@ public:
 	// ScriptPath 为空则用默认脚本 <项目>/Data/ReplayScripts/Default.json
 	explicit FSHMReplayProvider(const FString& ScriptPath = FString());
 
-	virtual FDirectorIntent RequestIntent(const FDirectorContext& Context) override;
+	// 立即（同步）回调——读内存里的脚本没有等待
+	virtual void RequestIntentAsync(const FDirectorContext& Context, FSHMOnIntentReady OnDone) override;
 	virtual FString GetProviderName() const override { return TEXT("Replay"); }
+
+	// 同步版（测试直接用）
+	FDirectorIntent RequestIntent(const FDirectorContext& Context);
 
 	// 脚本是否成功加载（失败时 DirectorCore 应改用本地 Provider）
 	bool IsScriptLoaded() const { return bLoaded; }

@@ -88,6 +88,14 @@ bool FSHMReplayProvider::LoadScript(const FString& AbsolutePath)
 	return IntentsByFloor.Num() > 0;
 }
 
+void FSHMReplayProvider::RequestIntentAsync(const FDirectorContext& Context, FSHMOnIntentReady OnDone)
+{
+	// 脚本缺这一层时 bSuccess=false，让 DirectorCore 降级——回放的价值是确定性，
+	// 猜一个凑数等于毁掉它
+	const bool bHas = IntentsByFloor.Contains(Context.FloorIndex);
+	OnDone.ExecuteIfBound(RequestIntent(Context), bHas);
+}
+
 FDirectorIntent FSHMReplayProvider::RequestIntent(const FDirectorContext& Context)
 {
 	if (const FDirectorIntent* Found = IntentsByFloor.Find(Context.FloorIndex))

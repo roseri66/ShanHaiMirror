@@ -37,9 +37,14 @@ void USHMFloorManager::StartRun()
 	Director->ResetRun();
 	FloorIndex = 0;
 
-	// F0 的决策 = 观察层（DirectorCore 内部短路），画像给空的即可
-	CurrentDecision = Director->DecideForFloor(FPlayerProfile(), 0);
-	ShowDirectorMessage(CurrentDecision);
+	// F0 = 观察层（DirectorCore 内部短路，同步返回），画像给空的即可
+	Director->DecideForFloorAsync(FPlayerProfile(), 0,
+		USHMDirectorCore::FSHMOnDecisionReady::CreateWeakLambda(this,
+			[this](const FDirectorDecision& Decision)
+	{
+		CurrentDecision = Decision;
+		ShowDirectorMessage(Decision);
+	}));
 
 	StartFloor();
 }
@@ -137,11 +142,26 @@ void USHMFloorManager::EndFloor()
 				TEXT("【白泽】镜之试炼到此为止。你走过的每一步，我都记下了。（一局完成）"));
 		}
 		UE_LOG(LogSHMFloor, Log, TEXT("一局完成（%d 层）"), TotalFloors);
+
+		// 导出整局决策日志：观察→判断→改了什么，一份可回放、可给前端渲染的证据
+		const FString DecisionLogPath = FPaths::ProjectSavedDir() /
+			FString::Printf(TEXT("DecisionLogs/Run_%s.json"), *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S")));
+		Director->ExportDecisionLog(DecisionLogPath);
 		return;
 	}
 
-	CurrentDecision = Director->DecideForFloor(Profile, FloorIndex);
-	ShowDirectorMessage(CurrentDecision);
+	// 异步决策：LLM 的 1-2 秒往返被下面这个 2.5 秒层间过场天然掩盖。
+	// 回调必定触发一次（内部三级降级保证），所以不需要"没回调"的兜底分支；
+	// 但仍先用观察层决策垫底，万一回调迟于计时器，玩家也不会撞进一个空决策。
+	CurrentDecision = USHMDirectorCore::MakeObserveFloorDecision();
+
+	Director->DecideForFloorAsync(Profile, FloorIndex,
+		USHMDirectorCore::FSHMOnDecisionReady::CreateWeakLambda(this,
+			[this](const FDirectorDecision& Decision)
+	{
+		CurrentDecision = Decision;
+		ShowDirectorMessage(Decision);
+	}));
 
 	GetWorld()->GetTimerManager().SetTimer(DelayTimer, this, &USHMFloorManager::StartFloor, 2.5f, false);
 }
