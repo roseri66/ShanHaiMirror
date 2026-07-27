@@ -19,6 +19,40 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogSHMDirectorCore, Log, All);
 
+// ============================================================================
+//  AI 导演总开关 —— 演示用对照组（DECISIONS §4.7 红线项）
+//
+//  关掉它，游戏不会坏，只会变平庸：固定均衡配比、零规则、白泽沉默。
+//  这正是论证「AI is the Gameplay」的方式——同一打法打两局，
+//  开的那局第 2 层起被定向反制，关的那局三层一个样。
+// ============================================================================
+static TAutoConsoleVariable<int32> CVarDirectorEnabled(
+	TEXT("SHM.Director"),
+	1,
+	TEXT("AI 导演总开关。1=开启（默认），0=关闭（固定配比、无规则、无台词，用于对照演示）"),
+	ECVF_Default);
+
+bool USHMDirectorCore::IsDirectorEnabled()
+{
+	return CVarDirectorEnabled.GetValueOnGameThread() != 0;
+}
+
+FDirectorDecision USHMDirectorCore::MakeDirectorOffDecision()
+{
+	// 与观察层的配比一致（均衡），但语义不同：观察层是"这一层先不动手"，
+	// 这里是"整局都不会动手"。台词留空——白泽在对照组里是沉默的。
+	FDirectorDecision Decision;
+	Decision.ChallengeLevel = EChallengeLevel::Stable;
+	Decision.EnemyWeights.Add(SHMTags::Enemy_Grunt.GetTag(),   0.55f);
+	Decision.EnemyWeights.Add(SHMTags::Enemy_Tank.GetTag(),    0.15f);
+	Decision.EnemyWeights.Add(SHMTags::Enemy_Rush.GetTag(),    0.15f);
+	Decision.EnemyWeights.Add(SHMTags::Enemy_Shooter.GetTag(), 0.15f);
+	Decision.NarrationLine = FString();   // 刻意为空：对照组没有白泽
+	Decision.Reason        = TEXT("AI 导演已关闭（对照组）：固定配比，无规则调整。");
+	Decision.Trace.ProviderId = TEXT("Disabled");
+	return Decision;
+}
+
 void USHMDirectorCore::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
@@ -187,6 +221,25 @@ FDirectorDecision USHMDirectorCore::MakeObserveFloorDecision()
 void USHMDirectorCore::DecideForFloorAsync(const FPlayerProfile& Profile, int32 FloorIndex,
 	FSHMOnDecisionReady OnDecision)
 {
+	// 对照组：导演关闭 —— 每层都返回同一份固定决策，不读画像、不调 Provider。
+	// 仍然记历史与日志，这样对照局也有一份可比对的决策日志。
+	if (!IsDirectorEnabled())
+	{
+		const FDirectorDecision Decision = MakeDirectorOffDecision();
+
+		FDirectorHistoryEntry Entry;
+		Entry.FloorIndex = FloorIndex;
+		DecisionHistory.Add(Entry);
+		LastDecision = Decision;
+
+		const FDirectorContext OffCtx = BuildContext(Profile, FloorIndex);
+		RecordLogEntry(OffCtx, FDirectorIntent(), FValidationResult(), Decision);
+
+		UE_LOG(LogSHMDirectorCore, Log, TEXT("F%d【AI 导演已关闭 · 对照组】固定配比"), FloorIndex);
+		OnDecision.ExecuteIfBound(Decision);
+		return;
+	}
+
 	// 首层只观察
 	if (FloorIndex <= 0)
 	{
@@ -344,6 +397,12 @@ void USHMDirectorCore::FinishDecision(const FDirectorContext& Context, const FDi
 // ============================================================================
 FDirectorDecision USHMDirectorCore::DecideForFloor(const FPlayerProfile& Profile, int32 FloorIndex)
 {
+	if (!IsDirectorEnabled())
+	{
+		LastDecision = MakeDirectorOffDecision();
+		return LastDecision;
+	}
+
 	if (FloorIndex <= 0)
 	{
 		const FDirectorDecision Observe = MakeObserveFloorDecision();

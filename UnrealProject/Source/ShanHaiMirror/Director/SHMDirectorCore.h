@@ -4,6 +4,9 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "SHMDirectorTypes.h"
 #include "SHMAIProvider.h"
+// 必须是完整类型而非前向声明：TUniquePtr<FSHMLocalProvider> 的销毁需要它，
+// 且 UObject 的 .gen.cpp 也会实例化析构（那里加不了 include）
+#include "SHMLocalProvider.h"
 #include "SHMDirectorCore.generated.h"
 
 class UDataTable;
@@ -70,6 +73,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AI Director")
 	FString GetProviderName() const { return Provider ? Provider->GetProviderName() : TEXT("None"); }
 
+	// AI 导演总开关（控制台 SHM.Director 0/1）。
+	// 关闭 = 固定均衡配比、零规则、白泽不出声，游戏退化为普通固定难度刷怪 Roguelike。
+	// **这是"抽掉 AI 体验就坍塌"的证明方式**（DECISIONS §4.7 红线项）：
+	// 不是让游戏坏掉，而是让它变得平庸——两局对照才有说服力。
+	static bool IsDirectorEnabled();
+
+	// 关闭态下的固定决策（不读画像、不调 Provider、不出台词）
+	static FDirectorDecision MakeDirectorOffDecision();
+
 private:
 	FDirectorContext BuildContext(const FPlayerProfile& Profile, int32 FloorIndex) const;
 
@@ -91,7 +103,7 @@ private:
 	TUniquePtr<ISHMAIProvider> Provider;
 
 	// 降级终点：永远可用，不参与 Provider 选择（Provider 失败时直接调它）
-	TUniquePtr<class FSHMLocalProvider> LocalFallback;
+	TUniquePtr<FSHMLocalProvider> LocalFallback;
 
 	TArray<FDirectorHistoryEntry> DecisionHistory;
 

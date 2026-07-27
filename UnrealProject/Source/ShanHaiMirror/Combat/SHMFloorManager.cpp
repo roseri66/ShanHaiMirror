@@ -3,6 +3,7 @@
 #include "Director/SHMBehaviorRecorder.h"
 #include "Director/SHMProfileAnalyzer.h"
 #include "Director/SHMDirectorCore.h"
+#include "UI/SHMDirectorHUD.h"
 #include "Framework/SHMEventBus.h"
 #include "Framework/SHMGameplayTags.h"
 #include "Framework/SHMAttributeComponent.h"
@@ -145,6 +146,7 @@ void USHMFloorManager::EndFloor()
 	const FPlayerProfile Profile =
 		FSHMProfileAnalyzer::Analyze(Recorder->GetCurrentSnapshot(), Recorder->GetHistory());
 	Recorder->FinalizeFloor();
+	LastProfile = Profile;   // 报告卡的「我看到了什么」数据源
 
 	if (USHMEventBus* Bus = USHMEventBus::Get(GI))
 	{
@@ -190,14 +192,24 @@ void USHMFloorManager::EndFloor()
 
 void USHMFloorManager::ShowDirectorMessage(const FDirectorDecision& Decision) const
 {
-	// 正式导演报告 UI 是第五次开工的事；屏显足以让"被针对"可感、可录屏
-	if (GEngine)
+	// 对照组（导演关闭）：白泽是沉默的，什么都不显示。
+	// 这不是"少显示一条信息"，而是对照实验的一部分——观众要看到的正是
+	// 「关掉之后没有任何人在针对我」。
+	if (!USHMDirectorCore::IsDirectorEnabled())
 	{
-		GEngine->AddOnScreenDebugMessage(1001, 8.f, FColor::Cyan,
-			FString::Printf(TEXT("【白泽】%s"), *Decision.NarrationLine));
-		GEngine->AddOnScreenDebugMessage(1003, 8.f, FColor::Silver,
-			FString::Printf(TEXT("（%s）"), *Decision.Reason));
+		UE_LOG(LogSHMFloor, Log, TEXT("【对照组】导演关闭，本层无调整"));
+		return;
 	}
+
+	// 报告卡：层间弹出，同时吸收 LLM 的 4~6 秒延迟
+	if (APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0))
+	{
+		if (ASHMDirectorHUD* Hud = Cast<ASHMDirectorHUD>(PC->GetHUD()))
+		{
+			Hud->ShowDirectorReport(LastProfile, Decision, FloorIndex);
+		}
+	}
+
 	UE_LOG(LogSHMFloor, Log, TEXT("应用决策：\n%s"), *USHMDirectorCore::DecisionToString(Decision));
 }
 

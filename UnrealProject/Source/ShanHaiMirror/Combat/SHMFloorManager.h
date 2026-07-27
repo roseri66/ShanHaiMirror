@@ -57,5 +57,10 @@ private:
 	float DecisionWaitedTime = 0.f;
 
 	FDirectorDecision CurrentDecision;
+
+	// 最近一次算出的画像——报告卡要显示「我看到了什么」，
+	// 而决策本身不携带画像（FDirectorDecision 是给玩法层的，不含诊断数据）
+	FPlayerProfile LastProfile;
+
 	FTimerHandle DelayTimer;
 };
