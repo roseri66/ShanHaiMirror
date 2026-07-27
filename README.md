@@ -149,7 +149,7 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | `ProfileAnalyzer`（链路 ②，五维） | ✅ 已完成 |
 | `DirectorCore` + 四道护栏（链路 ③⑤⑥） | ✅ 已完成 · Intent/Decision 类型分离 · 规则表 CSV 查表 |
 | `IAIProvider`（链路 ④） | 🟡 `FSHMLocalProvider` 已完成（降级终点，单独即完整导演）；Llm / Replay 两实现计划中 |
-| 单元测试（画像 + 护栏 + Provider + 遭遇 + 武器 + JSON + 回放） | ✅ **52/52 全绿** · [`Docs/TestResults.md`](Docs/TestResults.md) |
+| 单元测试（画像 + 护栏 + Provider + 遭遇 + 武器 + JSON + 回放 + 日志契约） | ✅ **53/53 全绿** · [`Docs/TestResults.md`](Docs/TestResults.md) |
 | 决策链路端到端 | ✅ 控制台 `SHM.DumpDecision` / `SHM.DumpDecisionAsync` |
 | 武器切换 + 弓（画像分化的输入源） | ✅ 已完成 · 攻击按 AttackPattern 分发 |
 | 敌人四原型 + 遭遇系统消费敌人权重 | ✅ 已完成 · 数据驱动（CSV）· 刷怪点导航网格投影 |
@@ -159,7 +159,12 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | 决策日志（含护栏前 RawIntent + 溯源） | ✅ 一局结束自动导出 JSON（`schemaVersion` 契约，回放/可视化共用） |
 | 导演报告 UI（链路 ⑦） | ⬜ 未开始（当前用屏显台词占位） |
 
-开发过程记录：[`Docs/Sprint开发总结.md`](Docs/Sprint开发总结.md)（复盘，含设计判断与修复教训）· [`Docs/踩坑记录.md`](Docs/踩坑记录.md)（17 条，每条含现象/原因/解法/规则）
+开发过程记录：[`Docs/Sprint开发总结.md`](Docs/Sprint开发总结.md)（复盘，含设计判断与修复教训）· [`Docs/踩坑记录.md`](Docs/踩坑记录.md)（19 条，每条含现象/原因/解法/规则）
+
+> **实测记录（DeepSeek `deepseek-chat`，OpenAI 兼容端点）**：单次决策往返 3.8–5.0s。
+> 三次真实调用分别走通了三条路径——① LLM 同时选中互斥规则（弹药↓ + 远程伤害↓，
+> 对远程玩家是无解组合）被 **Conflict 护栏拒绝并降级**；② 超时降级；③ 直采通过，
+> 台词「箭矢不够用的时候，你还能保持从容吗？」。第 ① 条是"护栏确实在约束 LLM"的实测证据。
 
 **范围与每一条取舍的理由见 [`Docs/DECISIONS.md`](Docs/DECISIONS.md)**，包含 20 条决策记录（砍掉什么、为什么砍、代价是什么、以及时间不够时的削减顺序）。
 
