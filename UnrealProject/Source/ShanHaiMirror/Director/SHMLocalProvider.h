@@ -13,6 +13,10 @@
 class SHANHAIMIRROR_API FSHMLocalProvider : public ISHMAIProvider
 {
 public:
-	virtual FDirectorIntent RequestIntent(const FDirectorContext& Context) override;
+	// 立即（同步）回调——本地查表没有等待
+	virtual void RequestIntentAsync(const FDirectorContext& Context, FSHMOnIntentReady OnDone) override;
 	virtual FString GetProviderName() const override { return TEXT("Local"); }
+
+	// 同步版：DirectorCore 降级时直接调用它，不必绕回调
+	FDirectorIntent RequestIntent(const FDirectorContext& Context);
 };

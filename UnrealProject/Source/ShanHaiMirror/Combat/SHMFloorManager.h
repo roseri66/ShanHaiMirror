@@ -40,9 +40,21 @@ private:
 	void ShowDirectorMessage(const FDirectorDecision& Decision) const;
 	bool IsPlayerDead() const;
 
+	// 层间过场时长。LLM 往返被它掩盖——但若决策来得更慢，StartFloor 会继续等
+	// （见 MaxDecisionWaitSeconds），绝不用垫底决策抢跑，否则这一层的 LLM 白调用了
+	static constexpr float FloorTransitionSeconds = 2.5f;
+	// 必须大于 FSHMLlmProvider 的超时（默认 10s），否则玩法层会先于 LLM 放弃，
+	// 等待就成了空耗——LLM 那次调用照发不误，结果却没人要
+	static constexpr float MaxDecisionWaitSeconds = 12.f;
+	static constexpr float DecisionPollSeconds    = 0.2f;
+
 	int32 FloorIndex = 0;
 	int32 RoomIndex  = 0;
 	float RoomStartTime = 0.f;
+
+	// 异步决策是否还在路上
+	bool  bDecisionPending   = false;
+	float DecisionWaitedTime = 0.f;
 
 	FDirectorDecision CurrentDecision;
 	FTimerHandle DelayTimer;

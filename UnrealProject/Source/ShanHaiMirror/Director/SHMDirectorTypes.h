@@ -167,6 +167,35 @@ struct FSHMRuleRow : public FTableRowBase
 };
 
 // ----------------------------------------------------------------------------
+// 护栏标识 —— 违规必须能分辨"是哪一道拦的"
+//
+// 为什么要枚举而不是只留自由文本：分道统计（"Fairness 拦了 N 次"）是
+// "LLM 确实在被约束"最直接的证据，也是决策回放 UI 逐条绿/红的数据源。
+// 只存字符串的话，将来只能靠解析文本还原——信息在源头就丢了。
+// ----------------------------------------------------------------------------
+UENUM(BlueprintType)
+enum class ESHMGuardrail : uint8
+{
+	Schema   UMETA(DisplayName = "结构合法性"),
+	Budget   UMETA(DisplayName = "挑战预算"),
+	Conflict UMETA(DisplayName = "规则互斥"),
+	Fairness UMETA(DisplayName = "公平性"),
+};
+
+USTRUCT(BlueprintType)
+struct FSHMValidationViolation
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	ESHMGuardrail Guard = ESHMGuardrail::Schema;
+
+	// 人读的详情，原样保留（枚举是新增维度，不是替代）
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FString Detail;
+};
+
+// ----------------------------------------------------------------------------
 // 校验结果
 // ----------------------------------------------------------------------------
 USTRUCT(BlueprintType)
@@ -177,7 +206,32 @@ struct FValidationResult
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool bValid = true;
 
-	// 拒绝原因（进日志；一次校验可能有多条违规，全部列出便于排查）
+	// 全部违规（一次校验不短路，四道护栏各自的问题一次列全，便于排查 LLM 输出）
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	TArray<FString> RejectReasons;
+	TArray<FSHMValidationViolation> Violations;
+
+	// --- 查询便捷方法（测试与统计用）---
+	bool HasViolation(ESHMGuardrail Guard) const
+	{
+		return Violations.ContainsByPredicate(
+			[Guard](const FSHMValidationViolation& V) { return V.Guard == Guard; });
+	}
+
+	int32 CountViolations(ESHMGuardrail Guard) const
+	{
+		int32 Count = 0;
+		for (const FSHMValidationViolation& V : Violations)
+		{
+			if (V.Guard == Guard) { ++Count; }
+		}
+		return Count;
+	}
+
+	// 日志/导出用的扁平文本
+	TArray<FString> GetAllDetails() const
+	{
+		TArray<FString> Out;
+		for (const FSHMValidationViolation& V : Violations) { Out.Add(V.Detail); }
+		return Out;
+	}
 };

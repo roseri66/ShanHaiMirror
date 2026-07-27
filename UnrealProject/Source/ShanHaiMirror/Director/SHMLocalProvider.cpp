@@ -50,6 +50,13 @@ namespace
 	}
 }
 
+void FSHMLocalProvider::RequestIntentAsync(const FDirectorContext& Context, FSHMOnIntentReady OnDone)
+{
+	// 本地决策是纯计算，立即回调。bSuccess 恒为 true——本地表永远交得出结果，
+	// 这正是它作为「降级终点」的意义。
+	OnDone.ExecuteIfBound(RequestIntent(Context), true);
+}
+
 FDirectorIntent FSHMLocalProvider::RequestIntent(const FDirectorContext& Ctx)
 {
 	const FPlayerProfile& P = Ctx.Profile;

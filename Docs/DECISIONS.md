@@ -150,6 +150,14 @@
 > Level Streaming/切图，World 级生命周期会丢掉层内累积数据与跨层决策历史——而决策历史
 > 既是 Fairness 护栏的输入，也是决策日志（D-17）的数据源，必须活过整个 Run。
 > 故 BehaviorRecorder 与 DirectorCore 均实现为 `UGameInstanceSubsystem`。
+>
+> ² **修正（2026-07-27，LLM 层实施时）：`ISHMAIProvider` 与决策路径改为异步。**
+> 原设计 `RequestIntent` 是同步返回。LLM 是 1-2 秒 HTTP 往返，同步接口会卡住游戏线程；
+> 而若只把 Provider 改异步、DirectorCore 仍同步，会留下"选了 LLM 就静默返回空决策"的陷阱。
+> 现为 `RequestIntentAsync(Context, OnDone)` + `DecideForFloorAsync`：本地/回放 Provider
+> 在调用内立即回调（行为等价于同步），LLM 在响应到达时回调。
+> LLM 延迟被 `FloorManager` 既有的 2.5 秒层间过场天然掩盖——正是 TDD §1.2 早就设想的结构。
+> 同步版 `DecideForFloor` 保留，但**强制走本地 Provider**，仅供控制台调试与单测使用。
 | **IAIProvider** | 接口（3 实现） | 在给定约束内产出 `FDirectorIntent` | **不做校验、不接触具体数值** |
 | **FloorGenerator** | `UObject` | 消费 `FDirectorDecision` 执行 | **不做任何决策** |
 
