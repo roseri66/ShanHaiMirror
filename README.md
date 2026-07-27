@@ -172,7 +172,7 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | **数据契约**（最能说明设计意图） | `Source/ShanHaiMirror/Framework/SHMCoreTypes.h` · `Director/SHMDirectorTypes.h` |
 | **Intent/Decision 分离 + 四道护栏**（本项目核心主张的落点） | `Director/SHMDirectorTypes.h` · `Director/SHMDecisionValidator.h` |
 | 决策编排（③→⑥ 串联、观察层短路、安全兜底） | `Director/SHMDirectorCore.cpp` |
-| 单元测试（TDD 全程，30 用例） | `Source/ShanHaiMirror/Tests/` |
+| 单元测试（TDD 全程，35 用例） | `Source/ShanHaiMirror/Tests/` |
 | 范围决策与理由 | `Docs/DECISIONS.md` |
 | 分层架构与 AI Director 详细设计 | `Docs/TDD.md` §1、§3 |
 | 事件总线 | `Source/ShanHaiMirror/Framework/SHMEventBus.h` |
