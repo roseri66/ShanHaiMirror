@@ -68,7 +68,7 @@ USTRUCT() struct FDirectorDecision
              ├ AvailableRules[]              已剔除违反公平性的规则
              └ History[]                     上层决策 + 玩家是否适应
    ▼
-④ CHOOSE     IAIProvider::RequestIntent(Context) ──> FDirectorIntent
+④ CHOOSE     IAIProvider::RequestIntentAsync(Context, OnDone) ──> FDirectorIntent
              ├ FLocalProvider   规则表        （永远可用·基线）
              ├ FLlmProvider     HTTP + JSON   （可失败）
              └ FReplayProvider  预录脚本      （确定性·录屏与集成测试）
@@ -87,7 +87,8 @@ USTRUCT() struct FDirectorDecision
              └ DecisionLog      时间轴，可导出 JSON
 ```
 
-**LLM 的 1-2 秒延迟被"导演报告"界面自然掩盖，不阻塞任何战斗帧。**
+**LLM 延迟（DeepSeek 实测 3.8–5.0s）被导演报告卡完全吸收**：卡片等玩家读完才开打，
+延迟藏在阅读时间里，且不阻塞任何战斗帧。
 
 ### 一次真实决策
 
@@ -114,9 +115,9 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | 模块 | 类型 | 做 | 明确不做 |
 |---|---|---|---|
 | `EventBus` | `UGameInstanceSubsystem` | 广播类型化玩法事件 | 不存状态、不做业务逻辑 |
-| `BehaviorRecorder` | `UWorldSubsystem` | 累积层行为快照 | 不分析、不打分、不决策 |
+| `BehaviorRecorder` | `UGameInstanceSubsystem` | 累积层行为快照 | 不分析、不打分、不决策 |
 | `ProfileAnalyzer` | **纯静态函数** | 快照 + 历史 → 五维画像 | 不碰 UObject / LLM / 随机数 |
-| `DirectorCore` | `UWorldSubsystem` | 编排：约束 → 请求 → 校验 → 映射 | 不直接改游戏对象、不发 HTTP |
+| `DirectorCore` | `UGameInstanceSubsystem` | 编排：约束 → 请求 → 校验 → 映射 | 不直接改游戏对象、不发 HTTP |
 | `IAIProvider` | 接口（3 实现） | 在给定约束内产出 Intent | 不做校验、不接触数值 |
 | `FloorGenerator` | `UObject` | 消费 Decision 执行 | **不做任何决策** |
 
@@ -161,7 +162,7 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | **AI 导演开/关对照** | ✅ `SHM.Director 0/1`，关闭后退化为固定难度刷怪，用于对照演示 |
 | 本局统计（简历数字来源） | ✅ `SHM.Stats`：护栏分道拦截数 · 降级率 · 决策耗时 |
 
-开发过程记录：[`Docs/Sprint开发总结.md`](Docs/Sprint开发总结.md)（复盘，含设计判断与修复教训）· [`Docs/踩坑记录.md`](Docs/踩坑记录.md)（19 条，每条含现象/原因/解法/规则）
+开发过程记录：[`Docs/Sprint开发总结.md`](Docs/Sprint开发总结.md)（五次开工复盘，含设计判断、计划偏离与修复教训）· [`Docs/踩坑记录.md`](Docs/踩坑记录.md)（21 条，每条含现象/原因/解法/规则）
 
 > **实测记录（DeepSeek `deepseek-chat`，OpenAI 兼容端点）**：单次决策往返 3.8–5.0s。
 > 三次真实调用分别走通了三条路径——① LLM 同时选中互斥规则（弹药↓ + 远程伤害↓，
@@ -184,7 +185,7 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | `SHM.Stats` | 本局统计：护栏分道拦截数 · 降级率 · 决策平均耗时 |
 
 不想跑项目，看这两样也够：
-- [`Docs/samples/`](Docs/samples/) 里的决策日志样例（一局的完整链路，含护栏前后对照）
+- [`Docs/samples/DecisionLog_Sample.json`](Docs/samples/DecisionLog_Sample.json) —— 真实对局导出的决策日志（近战打法，两层由 DeepSeek 直采，含护栏前后对照）
 - 上面那段 DeepSeek 实测记录
 
 ---
@@ -198,7 +199,7 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | **数据契约**（最能说明设计意图） | `Source/ShanHaiMirror/Framework/SHMCoreTypes.h` · `Director/SHMDirectorTypes.h` |
 | **Intent/Decision 分离 + 四道护栏**（本项目核心主张的落点） | `Director/SHMDirectorTypes.h` · `Director/SHMDecisionValidator.h` |
 | 决策编排（③→⑥ 串联、观察层短路、安全兜底） | `Director/SHMDirectorCore.cpp` |
-| 单元测试（TDD 全程，35 用例） | `Source/ShanHaiMirror/Tests/` |
+| 单元测试（TDD 全程，53 用例） | `Source/ShanHaiMirror/Tests/` |
 | 范围决策与理由 | `Docs/DECISIONS.md` |
 | 分层架构与 AI Director 详细设计 | `Docs/TDD.md` §1、§3 |
 | 事件总线 | `Source/ShanHaiMirror/Framework/SHMEventBus.h` |
@@ -218,7 +219,19 @@ UnrealProject/ShanHaiMirror.uproject     右键 Generate Visual Studio project f
 UnrealProject/ShanHaiMirror.sln          Development Editor | Win64
 ```
 
-LLM Provider 需要一个 OpenAI 兼容端点，通过环境变量配置（未配置时自动使用 `FLocalProvider`，游戏完整可玩）。
+LLM Provider 走**任一 OpenAI 兼容端点**，全部通过环境变量配置（**未配置时自动使用本地
+Provider，游戏完整可玩**）：
+
+```powershell
+setx SHM_LLM_API_KEY  "sk-..."                      # 必填，缺省则用本地 Provider
+setx SHM_LLM_BASE_URL "https://api.deepseek.com/v1" # 选填，默认 OpenAI
+setx SHM_LLM_MODEL    "deepseek-chat"               # 选填
+setx SHM_LLM_TIMEOUT  "10"                          # 选填，秒
+```
+
+设置后需**重启编辑器**（环境变量在进程启动时读取）。key 只存在于内存，
+不入库、不进日志。删除用 `[Environment]::SetEnvironmentVariable("SHM_LLM_API_KEY", $null, "User")`
+——`setx` 无法置空（踩坑 #20）。
 
 ---
 
