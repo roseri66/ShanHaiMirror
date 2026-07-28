@@ -24,6 +24,16 @@ Thumbs.db
 .DS_Store
 Desktop.ini
 
+# === Web（WebReplay，D-21）===
+WebReplay/node_modules/
+WebReplay/dist/
+WebReplay/.vite/
+WebReplay/*.local
+
+# === 本机开发工具配置（不入库）===
+# MCP 服务器配置：给 AI 助手查 UE 资产用的工具集，属于个人开发环境而非项目产物
+.mcp.json
+
 # === Misc ===
 *.log
 *.crash
