@@ -4,6 +4,9 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "SHMDirectorTypes.h"
 #include "SHMAIProvider.h"
+// 必须是完整类型而非前向声明：TUniquePtr<FSHMLocalProvider> 的销毁需要它，
+// 且 UObject 的 .gen.cpp 也会实例化析构（那里加不了 include）
+#include "SHMLocalProvider.h"
 #include "SHMDirectorCore.generated.h"
 
 class UDataTable;
@@ -42,8 +45,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "AI Director")
 	void ResetRun();
 
-	// --- 查询（调试/W5 日志用）---
+	// --- 查询（调试/日志/时间轴用）---
 	const TArray<FDirectorHistoryEntry>& GetDecisionHistory() const { return DecisionHistory; }
+
+	// 整局逐层留痕：时间轴 UI 与统计命令的数据源
+	const TArray<FSHMFloorRecord>& GetFloorRecords() const { return FloorRecords; }
 
 	// 当前生效规则的数值查询——玩法作用面（伤害/冷却计算）从这里取倍率。
 	// 未命中返回 1.0（无修改）。这是玩法层消费 FDirectorDecision 的便捷入口，
@@ -66,9 +72,24 @@ public:
 	// 公开是因为 FloorManager 也用它做异步回调到达前的垫底值。
 	static FDirectorDecision MakeObserveFloorDecision();
 
-	// 当前生效的 Provider 名（Local / Llm / Replay）
+	// 配置选中的 Provider 名（Local / Llm / Replay）
 	UFUNCTION(BlueprintPure, Category = "AI Director")
 	FString GetProviderName() const { return Provider ? Provider->GetProviderName() : TEXT("None"); }
+
+	// **实际决策者**的可读描述——UI 该显示这个而不是上面那个。
+	// 配置成 Llm 但每次都降级时，玩家看到的应该是「Llm → 已降级本地」，
+	// 而不是一个误导性的「Llm」。没有决策记录时回落到配置值。
+	UFUNCTION(BlueprintPure, Category = "AI Director")
+	FString GetEffectiveSourceLabel() const;
+
+	// AI 导演总开关（控制台 SHM.Director 0/1）。
+	// 关闭 = 固定均衡配比、零规则、白泽不出声，游戏退化为普通固定难度刷怪 Roguelike。
+	// **这是"抽掉 AI 体验就坍塌"的证明方式**（DECISIONS §4.7 红线项）：
+	// 不是让游戏坏掉，而是让它变得平庸——两局对照才有说服力。
+	static bool IsDirectorEnabled();
+
+	// 关闭态下的固定决策（不读画像、不调 Provider、不出台词）
+	static FDirectorDecision MakeDirectorOffDecision();
 
 private:
 	FDirectorContext BuildContext(const FPlayerProfile& Profile, int32 FloorIndex) const;
@@ -91,7 +112,7 @@ private:
 	TUniquePtr<ISHMAIProvider> Provider;
 
 	// 降级终点：永远可用，不参与 Provider 选择（Provider 失败时直接调它）
-	TUniquePtr<class FSHMLocalProvider> LocalFallback;
+	TUniquePtr<FSHMLocalProvider> LocalFallback;
 
 	TArray<FDirectorHistoryEntry> DecisionHistory;
 
@@ -100,6 +121,10 @@ private:
 
 	// 整局决策日志（JSON 对象数组，导出时套上顶层信封）
 	TArray<TSharedPtr<class FJsonObject>> LogEntries;
+
+	// 同一批数据的运行时形态（时间轴/统计用，免得为了画界面去反解析 JSON）
+	UPROPERTY()
+	TArray<FSHMFloorRecord> FloorRecords;
 	FString RunId;
 	FString RunStartedAt;
 };

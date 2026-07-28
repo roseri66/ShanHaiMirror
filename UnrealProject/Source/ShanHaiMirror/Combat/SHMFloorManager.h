@@ -38,6 +38,7 @@ private:
 	void HandleRoomCleared();
 	void EndFloor();
 	void ShowDirectorMessage(const FDirectorDecision& Decision) const;
+	class ASHMDirectorHUD* GetDirectorHUD() const;
 	bool IsPlayerDead() const;
 
 	// 层间过场时长。LLM 往返被它掩盖——但若决策来得更慢，StartFloor 会继续等
@@ -57,5 +58,10 @@ private:
 	float DecisionWaitedTime = 0.f;
 
 	FDirectorDecision CurrentDecision;
+
+	// 最近一次算出的画像——报告卡要显示「我看到了什么」，
+	// 而决策本身不携带画像（FDirectorDecision 是给玩法层的，不含诊断数据）
+	FPlayerProfile LastProfile;
+
 	FTimerHandle DelayTimer;
 };

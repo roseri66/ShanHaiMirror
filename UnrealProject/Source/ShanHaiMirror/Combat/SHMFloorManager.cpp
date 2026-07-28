@@ -3,6 +3,7 @@
 #include "Director/SHMBehaviorRecorder.h"
 #include "Director/SHMProfileAnalyzer.h"
 #include "Director/SHMDirectorCore.h"
+#include "UI/SHMDirectorHUD.h"
 #include "Framework/SHMEventBus.h"
 #include "Framework/SHMGameplayTags.h"
 #include "Framework/SHMAttributeComponent.h"
@@ -63,23 +64,39 @@ void USHMFloorManager::StartRoom()
 {
 	if (IsPlayerDead()) { return; }
 
-	// 决策还在路上就再等等——过场时长是「最少等多久」，不是「最多等多久」。
-	// 实测 DeepSeek 单次往返约 3.8s，超过 2.5s 过场；若按时开打，这一层会用垫底
-	// 配比刷怪，LLM 那次调用就白费了。等待封顶 MaxDecisionWaitSeconds 后照常开打。
-	if (bDecisionPending && RoomIndex == 0)
+	// 每层第一个房间之前有两道等待，都必须过了才刷怪：
+	//   ① 决策还在路上（LLM 往返）——不等就会用垫底配比刷怪，那次调用白费
+	//   ② 报告卡还没读完——不等就是「怪已经打上来了玩家还在看卡」（实测反馈）
+	// 二者都有封顶，绝不会把流程卡死。
+	if (RoomIndex == 0)
 	{
-		if (DecisionWaitedTime < MaxDecisionWaitSeconds)
+		// ① 等决策
+		if (bDecisionPending)
 		{
-			DecisionWaitedTime += DecisionPollSeconds;
-			GetWorld()->GetTimerManager().SetTimer(DelayTimer, this,
-				&USHMFloorManager::StartRoom, DecisionPollSeconds, false);
-			return;
+			if (DecisionWaitedTime < MaxDecisionWaitSeconds)
+			{
+				DecisionWaitedTime += DecisionPollSeconds;
+				GetWorld()->GetTimerManager().SetTimer(DelayTimer, this,
+					&USHMFloorManager::StartRoom, DecisionPollSeconds, false);
+				return;
+			}
+			UE_LOG(LogSHMFloor, Warning,
+				TEXT("等待决策超过 %.1fs，用垫底决策开打（这一层不会体现 AI 调整）"),
+				MaxDecisionWaitSeconds);
+			bDecisionPending = false;
 		}
 
-		UE_LOG(LogSHMFloor, Warning,
-			TEXT("等待决策超过 %.1fs，用垫底决策开打（这一层不会体现 AI 调整）"),
-			MaxDecisionWaitSeconds);
-		bDecisionPending = false;
+		// ② 等玩家读完报告卡
+		if (ASHMDirectorHUD* Hud = GetDirectorHUD())
+		{
+			if (Hud->IsReportShowing() && !Hud->IsReportAcknowledged())
+			{
+				GetWorld()->GetTimerManager().SetTimer(DelayTimer, this,
+					&USHMFloorManager::StartRoom, DecisionPollSeconds, false);
+				return;
+			}
+			Hud->HideDirectorReport();   // 读完即收，战斗界面保持干净
+		}
 	}
 
 	APawn* Player = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
@@ -145,6 +162,7 @@ void USHMFloorManager::EndFloor()
 	const FPlayerProfile Profile =
 		FSHMProfileAnalyzer::Analyze(Recorder->GetCurrentSnapshot(), Recorder->GetHistory());
 	Recorder->FinalizeFloor();
+	LastProfile = Profile;   // 报告卡的「我看到了什么」数据源
 
 	if (USHMEventBus* Bus = USHMEventBus::Get(GI))
 	{
@@ -190,15 +208,29 @@ void USHMFloorManager::EndFloor()
 
 void USHMFloorManager::ShowDirectorMessage(const FDirectorDecision& Decision) const
 {
-	// 正式导演报告 UI 是第五次开工的事；屏显足以让"被针对"可感、可录屏
-	if (GEngine)
+	// 对照组（导演关闭）：白泽是沉默的，什么都不显示。
+	// 这不是"少显示一条信息"，而是对照实验的一部分——观众要看到的正是
+	// 「关掉之后没有任何人在针对我」。
+	if (!USHMDirectorCore::IsDirectorEnabled())
 	{
-		GEngine->AddOnScreenDebugMessage(1001, 8.f, FColor::Cyan,
-			FString::Printf(TEXT("【白泽】%s"), *Decision.NarrationLine));
-		GEngine->AddOnScreenDebugMessage(1003, 8.f, FColor::Silver,
-			FString::Printf(TEXT("（%s）"), *Decision.Reason));
+		UE_LOG(LogSHMFloor, Log, TEXT("【对照组】导演关闭，本层无调整"));
+		return;
 	}
+
+	// 报告卡：层间弹出。StartRoom 会等它被读完才刷怪——
+	// 这既让玩家有时间读，也顺带把 LLM 的 4~6 秒延迟吸收干净
+	if (ASHMDirectorHUD* Hud = GetDirectorHUD())
+	{
+		Hud->ShowDirectorReport(LastProfile, Decision, FloorIndex);
+	}
+
 	UE_LOG(LogSHMFloor, Log, TEXT("应用决策：\n%s"), *USHMDirectorCore::DecisionToString(Decision));
+}
+
+ASHMDirectorHUD* USHMFloorManager::GetDirectorHUD() const
+{
+	const APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0);
+	return PC ? Cast<ASHMDirectorHUD>(PC->GetHUD()) : nullptr;
 }
 
 bool USHMFloorManager::IsPlayerDead() const
