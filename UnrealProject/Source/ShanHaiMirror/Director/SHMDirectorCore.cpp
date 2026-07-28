@@ -113,6 +113,7 @@ void USHMDirectorCore::ResetRun()
 	DecisionHistory.Empty();
 	LastDecision = FDirectorDecision();
 	LogEntries.Empty();
+	FloorRecords.Empty();
 	RunId        = FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens);
 	RunStartedAt = FDateTime::UtcNow().ToIso8601();
 }
@@ -524,6 +525,24 @@ void USHMDirectorCore::RecordLogEntry(const FDirectorContext& Context, const FDi
 	Floor->SetObjectField(Key_Trace, Trace);
 
 	LogEntries.Add(Floor);
+
+	// --- 同步一份运行时留痕（时间轴与统计从这里读）---
+	FSHMFloorRecord Record;
+	Record.FloorIndex = Context.FloorIndex;
+	Record.Profile    = Context.Profile;
+	Record.Decision   = Decision;
+	for (const FRuleIntent& RI : RawIntent.RuleIntents)
+	{
+		FString Short = RI.RuleTag.GetTagName().ToString();
+		Short.RemoveFromStart(TEXT("Rule."));
+		Record.RawIntentRules.Add(FString::Printf(TEXT("%s/%s"), *Short, *RI.Level));
+	}
+	for (const FSHMValidationViolation& V : Validation.Violations)
+	{
+		const FString GuardName = UEnum::GetDisplayValueAsText(V.Guard).ToString();
+		Record.TriggeredGuards.AddUnique(GuardName);
+	}
+	FloorRecords.Add(Record);
 }
 
 bool USHMDirectorCore::ExportDecisionLog(const FString& AbsolutePath) const

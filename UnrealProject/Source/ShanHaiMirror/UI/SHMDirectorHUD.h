@@ -47,6 +47,11 @@ public:
 	// 无操作时自动继续
 	static constexpr float AutoDismissSeconds = 7.f;
 
+	// --- 镜界时间轴：整局「看到什么 → 想改什么 → 护栏拦没拦 → 实际改了什么」---
+	void ToggleTimeline() { bShowingTimeline = !bShowingTimeline; }
+	void SetTimelineVisible(bool bVisible) { bShowingTimeline = bVisible; }
+	bool IsTimelineShowing() const { return bShowingTimeline; }
+
 private:
 	// 一行待绘制的文本
 	struct FReportLine
@@ -63,12 +68,14 @@ private:
 
 	void DrawReportCard(float Alpha);
 	void DrawDirectorStatusBadge();
+	void DrawTimeline();
 
 	float DrawLine(const FString& Text, float X, float Y, const FLinearColor& Color,
 	               float Scale = 1.f) const;
 
-	bool  bShowingReport = false;
-	float ReportShownAt  = 0.f;
+	bool  bShowingReport   = false;
+	bool  bShowingTimeline = false;
+	float ReportShownAt    = 0.f;
 
 	FPlayerProfile    CachedProfile;
 	FDirectorDecision CachedDecision;

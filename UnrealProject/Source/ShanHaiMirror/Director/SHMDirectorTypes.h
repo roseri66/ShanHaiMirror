@@ -139,6 +139,37 @@ struct FDirectorContext
 };
 
 // ----------------------------------------------------------------------------
+// 一层的决策留痕（时间轴与统计用的紧凑记录）
+//
+// 与决策日志 JSON 是同一批数据的两种形态：JSON 面向外部消费（回放/前端/后端），
+// 这个结构面向**运行时内部展示**（时间轴 UI、统计命令），避免为了画个界面
+// 去反解析自己刚写出去的 JSON。
+// ----------------------------------------------------------------------------
+USTRUCT(BlueprintType)
+struct FSHMFloorRecord
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly)
+	int32 FloorIndex = 0;
+
+	UPROPERTY(BlueprintReadOnly)
+	FPlayerProfile Profile;
+
+	UPROPERTY(BlueprintReadOnly)
+	FDirectorDecision Decision;
+
+	// 护栏前 Provider 想改的规则（与 Decision.RuleModifiers 并排看，
+	// 就是「它想干什么 vs 最终允许它干什么」——本项目最有说服力的一屏）
+	UPROPERTY(BlueprintReadOnly)
+	TArray<FString> RawIntentRules;
+
+	// 哪几道护栏拦下过（空 = 全部通过）
+	UPROPERTY(BlueprintReadOnly)
+	TArray<FString> TriggeredGuards;
+};
+
+// ----------------------------------------------------------------------------
 // DT_Rule 行结构 —— (RuleTag, Level) → 数值与代价。
 // 数据源为 Content/Data/RuleTable.csv（纯文本入库，可 diff）。
 // ----------------------------------------------------------------------------

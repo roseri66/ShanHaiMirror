@@ -45,8 +45,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "AI Director")
 	void ResetRun();
 
-	// --- 查询（调试/W5 日志用）---
+	// --- 查询（调试/日志/时间轴用）---
 	const TArray<FDirectorHistoryEntry>& GetDecisionHistory() const { return DecisionHistory; }
+
+	// 整局逐层留痕：时间轴 UI 与统计命令的数据源
+	const TArray<FSHMFloorRecord>& GetFloorRecords() const { return FloorRecords; }
 
 	// 当前生效规则的数值查询——玩法作用面（伤害/冷却计算）从这里取倍率。
 	// 未命中返回 1.0（无修改）。这是玩法层消费 FDirectorDecision 的便捷入口，
@@ -112,6 +115,10 @@ private:
 
 	// 整局决策日志（JSON 对象数组，导出时套上顶层信封）
 	TArray<TSharedPtr<class FJsonObject>> LogEntries;
+
+	// 同一批数据的运行时形态（时间轴/统计用，免得为了画界面去反解析 JSON）
+	UPROPERTY()
+	TArray<FSHMFloorRecord> FloorRecords;
 	FString RunId;
 	FString RunStartedAt;
 };

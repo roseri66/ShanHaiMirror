@@ -82,6 +82,12 @@ void ASHMDirectorHUD::DrawHUD()
 
 	DrawDirectorStatusBadge();
 
+	if (bShowingTimeline)
+	{
+		DrawTimeline();
+		return;   // 时间轴是全屏回看，不与报告卡叠加
+	}
+
 	if (!bShowingReport) { return; }
 
 	const float Elapsed = GetReportElapsed();
@@ -238,6 +244,100 @@ void ASHMDirectorHUD::DrawReportCard(float Alpha)
 	}
 }
 
+// ============================================================================
+//  镜界时间轴 —— 整局回看：看到什么 → 想改什么 → 护栏拦没拦 → 实际改了什么
+//
+//  **最值钱的是「想改什么 vs 实际改了什么」并排那两行**：
+//  它把「LLM 提议 → 护栏审查 → 落地执行」这条链路一次性摆给观众看。
+//  没有它，护栏只是 README 里的一句自我宣称。
+// ============================================================================
+void ASHMDirectorHUD::DrawTimeline()
+{
+	const UWorld* World = GetWorld();
+	const UGameInstance* GI = World ? World->GetGameInstance() : nullptr;
+	const USHMDirectorCore* Core = GI ? GI->GetSubsystem<USHMDirectorCore>() : nullptr;
+	if (!Core) { return; }
+
+	const TArray<FSHMFloorRecord>& Records = Core->GetFloorRecords();
+
+	const float W = FMath::Min(Canvas->SizeX - 80.f, 840.f);
+	const float X = (Canvas->SizeX - W) * 0.5f;
+	float Y = 70.f;
+
+	// 每层 5 行 + 间隔，外加标题与页脚
+	const float CardH = 90.f + Records.Num() * (LineH * 5.f + 10.f);
+	DrawRect(FLinearColor(0.02f, 0.04f, 0.07f, 0.94f), X, Y, W, CardH);
+	DrawRect(CardBorder, X, Y, 4.f, CardH);
+
+	float TextY = Y + PadY;
+	const float TextX = X + PadX;
+
+	TextY += DrawLine(TEXT("镜界时间轴  ·  本局 AI 决策回放"), TextX, TextY, TitleColor, 1.25f);
+	TextY += 8.f;
+
+	if (Records.Num() == 0)
+	{
+		DrawLine(TEXT("（本局尚无决策记录）"), TextX, TextY, TraceColor);
+		return;
+	}
+
+	for (const FSHMFloorRecord& R : Records)
+	{
+		// 第 N 层 · 画像摘要
+		TextY += DrawLine(FString::Printf(
+			TEXT("第 %d 层    集中度 %.0f · 效率 %.0f · 压力 %.0f · 置信 %.2f"),
+			R.FloorIndex + 1, R.Profile.BuildConcentration, R.Profile.CombatEfficiency,
+			R.Profile.SurvivalPressure, R.Profile.Confidence), TextX, TextY, TitleColor, 1.05f);
+
+		// 想改什么（护栏前）
+		const FString Wanted = R.RawIntentRules.Num() > 0
+			? FString::Join(R.RawIntentRules, TEXT("  "))
+			: TEXT("（无）");
+		TextY += DrawLine(FString::Printf(TEXT("   想改：%s"), *Wanted), TextX, TextY, LabelColor, 0.95f);
+
+		// 护栏判定
+		if (R.TriggeredGuards.Num() > 0)
+		{
+			TextY += DrawLine(FString::Printf(TEXT("   护栏：%s  → 拦截"),
+				*FString::Join(R.TriggeredGuards, TEXT(" / "))), TextX, TextY, DegradeColor, 0.95f);
+		}
+		else
+		{
+			TextY += DrawLine(TEXT("   护栏：四道全过"), TextX, TextY,
+				FLinearColor(0.45f, 0.80f, 0.55f, 1.f), 0.95f);
+		}
+
+		// 实际改了什么（护栏后，带数值）
+		FString Applied;
+		for (const FRuleModifier& Mod : R.Decision.RuleModifiers)
+		{
+			FString Short = Mod.RuleTag.GetTagName().ToString();
+			Short.RemoveFromStart(TEXT("Rule."));
+			Applied += FString::Printf(TEXT("%s x%.2f  "), *Short, Mod.Multiplier);
+		}
+		if (Applied.IsEmpty()) { Applied = TEXT("（无规则调整）"); }
+		TextY += DrawLine(FString::Printf(TEXT("   实改：%s"), *Applied), TextX, TextY, WarnColor, 0.95f);
+
+		// 出自谁 + 台词
+		FString Tail = FString::Printf(TEXT("   %s"), *R.Decision.Trace.ProviderId);
+		if (R.Decision.Trace.bDegraded) { Tail += TEXT("（已降级）"); }
+		if (R.Decision.Trace.ElapsedMs > 0.5f)
+		{
+			Tail += FString::Printf(TEXT(" · %.0fms"), R.Decision.Trace.ElapsedMs);
+		}
+		if (!R.Decision.NarrationLine.IsEmpty())
+		{
+			Tail += FString::Printf(TEXT("   「%s」"), *R.Decision.NarrationLine);
+		}
+		TextY += DrawLine(Tail, TextX, TextY,
+			R.Decision.Trace.bDegraded ? DegradeColor : TraceColor, 0.9f);
+
+		TextY += 10.f;
+	}
+
+	DrawLine(TEXT("SHM.Timeline 再次输入可关闭"), TextX, TextY, HintColor, 0.85f);
+}
+
 float ASHMDirectorHUD::DrawLine(const FString& Text, float X, float Y,
 	const FLinearColor& Color, float Scale) const
 {
@@ -252,3 +352,91 @@ float ASHMDirectorHUD::DrawLine(const FString& Text, float X, float Y,
 
 	return LineH * Scale;
 }
+
+// ============================================================================
+//  控制台：SHM.Timeline —— 切换镜界时间轴
+// ============================================================================
+static FAutoConsoleCommandWithWorld GTimelineCmd(
+	TEXT("SHM.Timeline"),
+	TEXT("切换镜界时间轴（本局 AI 决策回放）"),
+	FConsoleCommandWithWorldDelegate::CreateStatic([](UWorld* World)
+	{
+		if (!World) { return; }
+		if (APlayerController* PC = World->GetFirstPlayerController())
+		{
+			if (ASHMDirectorHUD* Hud = Cast<ASHMDirectorHUD>(PC->GetHUD()))
+			{
+				Hud->ToggleTimeline();
+				return;
+			}
+		}
+		UE_LOG(LogTemp, Warning, TEXT("SHM.Timeline: 需要在 PIE 运行中执行（先点 Play）"));
+	}));
+
+// ============================================================================
+//  控制台：SHM.Stats —— 本局统计（简历数字的来源，只报实测不估算）
+// ============================================================================
+static FAutoConsoleCommandWithWorld GStatsCmd(
+	TEXT("SHM.Stats"),
+	TEXT("打印本局 AI 导演统计：护栏分道拦截数、降级率、LLM 平均耗时"),
+	FConsoleCommandWithWorldDelegate::CreateStatic([](UWorld* World)
+	{
+		const UGameInstance* GI = World ? World->GetGameInstance() : nullptr;
+		const USHMDirectorCore* Core = GI ? GI->GetSubsystem<USHMDirectorCore>() : nullptr;
+		if (!Core)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("SHM.Stats: 需要在 PIE 运行中执行（先点 Play）"));
+			return;
+		}
+
+		const TArray<FSHMFloorRecord>& Records = Core->GetFloorRecords();
+		if (Records.Num() == 0)
+		{
+			UE_LOG(LogTemp, Display, TEXT("SHM.Stats: 本局尚无决策记录"));
+			return;
+		}
+
+		// 分道统计——P1 的枚举分道就是为这一刻做的
+		TMap<FString, int32> GuardHits;
+		int32 DegradedCount = 0;
+		int32 LlmCalls = 0;
+		float TotalMs  = 0.f;
+
+		for (const FSHMFloorRecord& R : Records)
+		{
+			for (const FString& Guard : R.TriggeredGuards)
+			{
+				GuardHits.FindOrAdd(Guard)++;
+			}
+			if (R.Decision.Trace.bDegraded) { ++DegradedCount; }
+			if (R.Decision.Trace.ElapsedMs > 0.5f)
+			{
+				++LlmCalls;
+				TotalMs += R.Decision.Trace.ElapsedMs;
+			}
+		}
+
+		FString Out = FString::Printf(TEXT("\n=== 本局 AI 导演统计（%d 层）===\n"), Records.Num());
+		Out += TEXT("护栏拦截（分道）:\n");
+		if (GuardHits.Num() == 0)
+		{
+			Out += TEXT("  （无拦截，所有决策均通过四道护栏）\n");
+		}
+		for (const TPair<FString, int32>& Pair : GuardHits)
+		{
+			Out += FString::Printf(TEXT("  %s : %d 次\n"), *Pair.Key, Pair.Value);
+		}
+		Out += FString::Printf(TEXT("降级率      : %d/%d（%.0f%%）\n"),
+			DegradedCount, Records.Num(), 100.f * DegradedCount / Records.Num());
+		if (LlmCalls > 0)
+		{
+			Out += FString::Printf(TEXT("决策平均耗时: %.0fms（%d 次远程调用）\n"), TotalMs / LlmCalls, LlmCalls);
+		}
+		else
+		{
+			Out += TEXT("决策平均耗时: 本地决策，无网络往返\n");
+		}
+		Out += FString::Printf(TEXT("决策来源    : %s\n"), *Core->GetProviderName());
+
+		UE_LOG(LogTemp, Display, TEXT("%s"), *Out);
+	}));
