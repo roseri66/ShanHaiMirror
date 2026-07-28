@@ -26,8 +26,8 @@ public:
 	virtual void RequestIntentAsync(const FDirectorContext& Context, FSHMOnIntentReady OnDone) override;
 	virtual FString GetProviderName() const override { return TEXT("Llm"); }
 
-	// key 是否就位。false 时 DirectorCore 不该选它
-	bool IsAvailable() const { return !ApiKey.IsEmpty(); }
+	// 是否可用。key 为空、或已因鉴权失败自我停用时返回 false
+	bool IsAvailable() const { return !ApiKey.IsEmpty() && !bAuthFailed; }
 
 	const FString& GetBaseUrl() const { return BaseUrl; }
 	const FString& GetModel()   const { return Model; }
@@ -52,4 +52,9 @@ private:
 	FString BaseUrl;
 	FString Model;
 	float   TimeoutSeconds = DefaultTimeoutSeconds;
+
+	// 鉴权失败（401/403）后自我停用：**key 是错的，重试多少次都是错的**。
+	// 不停用的话，一个废 key 会让每一层都白等一次超时/白发一次请求，
+	// 整局体验被拖慢却毫无收益。
+	bool bAuthFailed = false;
 };

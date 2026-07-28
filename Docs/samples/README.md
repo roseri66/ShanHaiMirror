@@ -1,18 +1,22 @@
 # 样例数据
 
-## `DecisionLog_Sample.json`（待补）
+## `DecisionLog_Sample.json`
 
-一局的完整决策日志，格式契约见
-[`SHMDecisionLogFormat.h`](../../UnrealProject/Source/ShanHaiMirror/Director/SHMDecisionLogFormat.h)。
+**真实对局导出**（近战打法，LLM = DeepSeek `deepseek-chat`），仅替换了 runId 与时间戳。
+格式契约见 [`SHMDecisionLogFormat.h`](../../UnrealProject/Source/ShanHaiMirror/Director/SHMDecisionLogFormat.h)。
 
-**这份文件必须来自真实对局导出，不手工编造**——它的价值就在于是真的。
+这一局里 AI 导演做了什么：
 
-生成方式（任选）：
+| 层 | 决策来源 | 耗时 | 想改 → 实改 | 白泽说 |
+|---|---|---|---|---|
+| F0 | ObserveFloor | — | （不调整） | 第一层。我只是在看。 |
+| F1 | **Llm** | 3721ms | MeleeDamage/medium → ×0.80 | 近战猛攻？试试砍穿这层铁壁。 |
+| F2 | **Llm** | 2804ms | Heal + Ammo/medium → ×0.70 ×0.70 | 近战莽夫？试试远程消耗加治疗封锁，看你怎么近身。 |
 
-- 打完整一局（3 层），结束时自动导出到 `UnrealProject/Saved/DecisionLogs/Run_*.json`
-- 或游戏中控制台执行 `SHM.ExportDecisionLog`，导出到 `Saved/DecisionLogs/Manual_*.json`
+台词是 LLM 现场生成的，针对玩家实际的近战打法——这一局三层护栏零拦截，决策直采。
 
-拿到后复制到本目录即可。文件已是 UTF-8，可直接被任意 JSON 工具读取。
+> 自己再生成一份：打完整一局自动导出到 `UnrealProject/Saved/DecisionLogs/Run_*.json`，
+> 或游戏中控制台 `SHM.ExportDecisionLog`。文件为 UTF-8，任意 JSON 工具可直读。
 
 ### 看这份文件的重点
 

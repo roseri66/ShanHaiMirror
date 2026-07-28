@@ -72,9 +72,15 @@ public:
 	// 公开是因为 FloorManager 也用它做异步回调到达前的垫底值。
 	static FDirectorDecision MakeObserveFloorDecision();
 
-	// 当前生效的 Provider 名（Local / Llm / Replay）
+	// 配置选中的 Provider 名（Local / Llm / Replay）
 	UFUNCTION(BlueprintPure, Category = "AI Director")
 	FString GetProviderName() const { return Provider ? Provider->GetProviderName() : TEXT("None"); }
+
+	// **实际决策者**的可读描述——UI 该显示这个而不是上面那个。
+	// 配置成 Llm 但每次都降级时，玩家看到的应该是「Llm → 已降级本地」，
+	// 而不是一个误导性的「Llm」。没有决策记录时回落到配置值。
+	UFUNCTION(BlueprintPure, Category = "AI Director")
+	FString GetEffectiveSourceLabel() const;
 
 	// AI 导演总开关（控制台 SHM.Director 0/1）。
 	// 关闭 = 固定均衡配比、零规则、白泽不出声，游戏退化为普通固定难度刷怪 Roguelike。

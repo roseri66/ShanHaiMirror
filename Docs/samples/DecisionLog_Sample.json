@@ -1,0 +1,340 @@
+{
+  "schemaVersion": 1,
+  "_note": "真实对局导出的样例（近战打法，LLM=DeepSeek deepseek-chat）。仅替换 runId 与时间戳，其余原样保留。格式契约见 Source/ShanHaiMirror/Director/SHMDecisionLogFormat.h",
+  "_howToRead": "对比每层的 rawIntent.ruleIntents（护栏前，只有 tag+level，无数值）与 decision.ruleModifiers（护栏后，出现 multiplier）——数值只在护栏之后产生。",
+  "runId": "sample-melee-3floors",
+  "startedAt": "2026-07-28T00:00:00Z",
+  "totalFloors": 3,
+  "floors": [
+    {
+      "floorIndex": 0,
+      "profile": {
+        "buildConcentration": 0,
+        "combatEfficiency": 0,
+        "resourceSurplus": 0,
+        "strategySwitch": 0,
+        "survivalPressure": 0,
+        "confidence": 0.5,
+        "dominantArchetype": "None"
+      },
+      "context": {
+        "challengeBudget": 0,
+        "availableRules": [
+          {
+            "tag": "Rule.Ammo",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.Ammo",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.Cooldown",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.Cooldown",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.Heal",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.Heal",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.MeleeDamage",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.MeleeDamage",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.RangedDamage",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.RangedDamage",
+            "level": "medium",
+            "cost": 20
+          }
+        ]
+      },
+      "rawIntent": {
+        "challengeLevel": "Stable",
+        "enemyWeights": {},
+        "ruleIntents": [],
+        "narration": "",
+        "reason": ""
+      },
+      "validation": {
+        "valid": true,
+        "violations": []
+      },
+      "decision": {
+        "challengeLevel": "Stable",
+        "enemyWeights": {
+          "Enemy.Grunt": 0.550000011920929,
+          "Enemy.Tank": 0.15000000596046448,
+          "Enemy.Rush": 0.15000000596046448,
+          "Enemy.Shooter": 0.15000000596046448
+        },
+        "ruleModifiers": [],
+        "narration": "第一层。我只是在看。",
+        "reason": "首层只观察：建立画像，不做任何调整。"
+      },
+      "trace": {
+        "providerId": "ObserveFloor",
+        "degraded": false,
+        "degradeReason": "",
+        "elapsedMs": 0
+      }
+    },
+    {
+      "floorIndex": 1,
+      "profile": {
+        "buildConcentration": 100,
+        "combatEfficiency": 100,
+        "resourceSurplus": 50,
+        "strategySwitch": 0,
+        "survivalPressure": 0,
+        "confidence": 0.5,
+        "dominantArchetype": "Archetype.Vanguard"
+      },
+      "context": {
+        "challengeBudget": 30,
+        "availableRules": [
+          {
+            "tag": "Rule.Ammo",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.Ammo",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.Cooldown",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.Cooldown",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.Heal",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.Heal",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.MeleeDamage",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.MeleeDamage",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.RangedDamage",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.RangedDamage",
+            "level": "medium",
+            "cost": 20
+          }
+        ]
+      },
+      "rawIntent": {
+        "challengeLevel": "Counter",
+        "enemyWeights": {
+          "Enemy.Grunt": 0.30000001192092896,
+          "Enemy.Tank": 0.5,
+          "Enemy.Rush": 0.20000000298023224,
+          "Enemy.Shooter": 0
+        },
+        "ruleIntents": [
+          {
+            "tag": "Rule.MeleeDamage",
+            "level": "medium"
+          }
+        ],
+        "narration": "近战猛攻？试试砍穿这层铁壁。",
+        "reason": "玩家高度依赖近战，用坦克和近战伤害削弱规则迫使改变打法，预算刚好20。"
+      },
+      "validation": {
+        "valid": true,
+        "violations": []
+      },
+      "decision": {
+        "challengeLevel": "Counter",
+        "enemyWeights": {
+          "Enemy.Grunt": 0.30000001192092896,
+          "Enemy.Tank": 0.5,
+          "Enemy.Rush": 0.20000000298023224,
+          "Enemy.Shooter": 0
+        },
+        "ruleModifiers": [
+          {
+            "tag": "Rule.MeleeDamage",
+            "level": "medium",
+            "multiplier": 0.800000011920929,
+            "cost": 20
+          }
+        ],
+        "narration": "近战猛攻？试试砍穿这层铁壁。",
+        "reason": "玩家高度依赖近战，用坦克和近战伤害削弱规则迫使改变打法，预算刚好20。"
+      },
+      "trace": {
+        "providerId": "Llm",
+        "degraded": false,
+        "degradeReason": "",
+        "elapsedMs": 3721.015625
+      }
+    },
+    {
+      "floorIndex": 2,
+      "profile": {
+        "buildConcentration": 100,
+        "combatEfficiency": 97.91666412353516,
+        "resourceSurplus": 50,
+        "strategySwitch": 0,
+        "survivalPressure": 0,
+        "confidence": 0.699999988079071,
+        "dominantArchetype": "Archetype.Vanguard"
+      },
+      "context": {
+        "challengeBudget": 55,
+        "availableRules": [
+          {
+            "tag": "Rule.Ammo",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.Ammo",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.Cooldown",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.Cooldown",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.Heal",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.Heal",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.MeleeDamage",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.MeleeDamage",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.RangedDamage",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.RangedDamage",
+            "level": "medium",
+            "cost": 20
+          }
+        ]
+      },
+      "rawIntent": {
+        "challengeLevel": "Pressure",
+        "enemyWeights": {
+          "Enemy.Shooter": 0.5,
+          "Enemy.Rush": 0.30000001192092896,
+          "Enemy.Grunt": 0.20000000298023224
+        },
+        "ruleIntents": [
+          {
+            "tag": "Rule.Heal",
+            "level": "medium"
+          },
+          {
+            "tag": "Rule.Ammo",
+            "level": "medium"
+          }
+        ],
+        "narration": "近战莽夫？试试远程消耗加治疗封锁，看你怎么近身。",
+        "reason": "玩家完全依赖近战，且策略切换意愿极低，用高远程权重和禁回复规则迫使其改变走位，同时注意预算限制。"
+      },
+      "validation": {
+        "valid": true,
+        "violations": []
+      },
+      "decision": {
+        "challengeLevel": "Pressure",
+        "enemyWeights": {
+          "Enemy.Shooter": 0.5,
+          "Enemy.Rush": 0.30000001192092896,
+          "Enemy.Grunt": 0.20000000298023224
+        },
+        "ruleModifiers": [
+          {
+            "tag": "Rule.Heal",
+            "level": "medium",
+            "multiplier": 0.699999988079071,
+            "cost": 20
+          },
+          {
+            "tag": "Rule.Ammo",
+            "level": "medium",
+            "multiplier": 0.699999988079071,
+            "cost": 20
+          }
+        ],
+        "narration": "近战莽夫？试试远程消耗加治疗封锁，看你怎么近身。",
+        "reason": "玩家完全依赖近战，且策略切换意愿极低，用高远程权重和禁回复规则迫使其改变走位，同时注意预算限制。"
+      },
+      "trace": {
+        "providerId": "Llm",
+        "degraded": false,
+        "degradeReason": "",
+        "elapsedMs": 2804.269775390625
+      }
+    }
+  ]
+}

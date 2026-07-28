@@ -118,6 +118,25 @@ void USHMDirectorCore::ResetRun()
 	RunStartedAt = FDateTime::UtcNow().ToIso8601();
 }
 
+FString USHMDirectorCore::GetEffectiveSourceLabel() const
+{
+	// 还没做过决策：只能报配置值
+	if (LastDecision.Trace.ProviderId.IsEmpty() || FloorRecords.Num() == 0)
+	{
+		const FString Configured = GetProviderName();
+		return Configured == TEXT("Llm")
+			? TEXT("Llm（尚未发起首次决策）")
+			: Configured;
+	}
+
+	const FDirectorTrace& Trace = LastDecision.Trace;
+	if (Trace.bDegraded)
+	{
+		return FString::Printf(TEXT("%s → 已降级本地"), *Trace.ProviderId);
+	}
+	return Trace.ProviderId;
+}
+
 float USHMDirectorCore::GetActiveRuleMultiplier(FGameplayTag RuleTag) const
 {
 	for (const FRuleModifier& Mod : LastDecision.RuleModifiers)

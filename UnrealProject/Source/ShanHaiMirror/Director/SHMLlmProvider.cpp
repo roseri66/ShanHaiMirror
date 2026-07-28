@@ -79,7 +79,19 @@ void FSHMLlmProvider::RequestIntentAsync(const FDirectorContext& Context, FSHMOn
 		// --- HTTP 层失败（401/429/500…）---
 		if (Code != 200)
 		{
-			UE_LOG(LogSHMLlm, Warning, TEXT("HTTP %d，耗时 %.0fms —— 将降级本地"), Code, ElapsedMs);
+			// 鉴权错：key 本身是错的，重试多少次都一样。自我停用，
+			// 避免后面每一层都白发一次请求（一个废 key 能拖慢整局）
+			if (Code == 401 || Code == 403)
+			{
+				bAuthFailed = true;
+				UE_LOG(LogSHMLlm, Error,
+					TEXT("HTTP %d 鉴权失败——SHM_LLM_API_KEY 无效。**本局不再尝试 LLM**，")
+					TEXT("全部由本地规则表决策。请检查环境变量后重启编辑器。"), Code);
+			}
+			else
+			{
+				UE_LOG(LogSHMLlm, Warning, TEXT("HTTP %d，耗时 %.0fms —— 将降级本地"), Code, ElapsedMs);
+			}
 			OnDone.ExecuteIfBound(FDirectorIntent(), false);
 			return;
 		}

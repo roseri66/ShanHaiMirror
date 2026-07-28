@@ -113,22 +113,29 @@ void ASHMDirectorHUD::DrawDirectorStatusBadge()
 
 	if (bOn)
 	{
-		FString ProviderName = TEXT("Local");
+		// 显示**实际决策者**，不是配置值：配成 Llm 但每次降级时，
+		// 写「Llm」是误导——观众要知道的是这一层到底谁做的决定
+		FString Source = TEXT("Local");
+		bool bDegraded = false;
 		if (const UWorld* World = GetWorld())
 		{
 			if (const UGameInstance* GI = World->GetGameInstance())
 			{
 				if (const USHMDirectorCore* Core = GI->GetSubsystem<USHMDirectorCore>())
 				{
-					ProviderName = Core->GetProviderName();
+					Source    = Core->GetEffectiveSourceLabel();
+					bDegraded = Source.Contains(TEXT("降级"));
 				}
 			}
 		}
-		const bool bLlm = ProviderName == TEXT("Llm");
-		Text  = FString::Printf(TEXT("AI Director: ON  ·  决策来源 %s%s"),
-			*ProviderName, bLlm ? TEXT("") : TEXT("（LLM 未接入，本地规则表决策）"));
-		Color = bLlm ? FLinearColor(0.45f, 0.85f, 0.95f, 1.f)
-		             : FLinearColor(0.45f, 0.85f, 0.55f, 1.f);
+
+		const bool bPureLlm = Source.StartsWith(TEXT("Llm")) && !bDegraded;
+		Text = FString::Printf(TEXT("AI Director: ON  ·  决策来源 %s%s"), *Source,
+			(Source == TEXT("Local")) ? TEXT("（本地规则表，未接 LLM）") : TEXT(""));
+
+		Color = bDegraded ? FLinearColor(0.95f, 0.70f, 0.35f, 1.f)   // 降级：橙
+		      : bPureLlm  ? FLinearColor(0.45f, 0.85f, 0.95f, 1.f)   // LLM：青
+		                  : FLinearColor(0.45f, 0.85f, 0.55f, 1.f);  // 本地：绿
 	}
 	else
 	{
