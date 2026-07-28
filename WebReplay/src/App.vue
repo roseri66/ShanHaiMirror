@@ -45,6 +45,16 @@ const narration = computed(() =>
       <span class="dim hint">{{ sample.hint }}</span>
     </div>
 
+    <!--
+      出处横幅。**必须在页面上可见**——JSON 里的 _note 渲染不出来，
+      而这个页面把每一份数据都摆成「本局概览 / runId / 层数」的样子，
+      等于在暗示它是一局游戏。夹具被当成对局记录是这里最容易犯的诚信错误。
+    -->
+    <p class="provenance" :class="sample.kind">
+      <span class="tag">{{ sample.kind === 'realRun' ? '真实对局' : '脚本测试 · 非对局' }}</span>
+      {{ sample.provenance }}
+    </p>
+
     <template v-if="result.ok">
       <RunHeader :run="result.run" />
 
@@ -178,6 +188,37 @@ const narration = computed(() =>
 .hint {
   flex: 1 1 18rem;
   min-width: 0;
+}
+
+.provenance {
+  margin: 0 0 1.25rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+.provenance .tag {
+  display: inline-block;
+  margin-right: 0.4rem;
+  padding: 0.05em 0.45em;
+  border-radius: 0.2rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.provenance.realRun .tag {
+  color: var(--ok);
+  background: var(--ok-bg);
+}
+/* 夹具用警示色：这是全页最不该被误读的一件事 */
+.provenance.fixture {
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  background: var(--warn-bg);
+}
+.provenance.fixture .tag {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 20%, transparent);
 }
 
 .detail {

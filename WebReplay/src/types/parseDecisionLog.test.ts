@@ -15,7 +15,10 @@ import { describe, expect, it } from 'vitest'
 import { parseDecisionLog } from './parseDecisionLog'
 import { normalizeGuard, SCHEMA_VERSION } from './decisionLog'
 import greenSample from '../../../Docs/samples/DecisionLog_Sample.json'
-import guardrailSample from '../../../Docs/samples/DecisionLog_Guardrail.json'
+// 两份护栏样例的 guard 字段形式**恰好不同**，是难得的双向覆盖：
+// Ideal 导出于 UE 侧修复之前（"ESHMGuardrail::Conflict"），Run 导出于修复之后（"Conflict"）。
+import guardrailRun from '../../../Docs/samples/DecisionLog_Guardrail_Run.json'
+import guardrailIdeal from '../../../Docs/samples/DecisionLog_Guardrail_Ideal.json'
 
 /** 断言解析成功并取出 run，失败时直接让测试报错而不是返回 undefined。 */
 function mustParse(raw: unknown) {
@@ -56,10 +59,12 @@ describe('真实样例', () => {
     }
   })
 
-  it('护栏样例：三道护栏各拦一层，且都降级了', () => {
-    const { run, warnings } = mustParse(guardrailSample)
+  it('理想夹具：三道护栏各拦一层，且都降级了', () => {
+    const { run, warnings } = mustParse(guardrailIdeal)
 
     expect(warnings).toEqual([])
+    // 四层。**F3 在游戏里到不了**（FloorManager::TotalFloors=3），
+    // 这份是控制台逐层调出来的，不是一局游戏——样例文件顶部的 _kind/_notARun 写明了这点。
     expect(run.floors).toHaveLength(4)
 
     const byFloor = Object.fromEntries(run.floors.map((f) => [f.floorIndex, f]))
@@ -80,8 +85,33 @@ describe('真实样例', () => {
     }
   })
 
+  it('真实对局：三层的真实形状，护栏拦下 2 次并降级', () => {
+    const { run, warnings } = mustParse(guardrailRun)
+
+    expect(warnings).toEqual([])
+    // 真实对局只有 F0/F1/F2——这份是玩家实打一局后自动导出的
+    expect(run.floors.map((f) => f.floorIndex)).toEqual([0, 1, 2])
+
+    const byFloor = Object.fromEntries(run.floors.map((f) => [f.floorIndex, f]))
+    expect(byFloor[1].validation.violations[0].guard).toBe('Conflict')
+    expect(byFloor[2].validation.violations[0].guard).toBe('Budget')
+    expect(byFloor[1].trace.degraded).toBe(true)
+    expect(byFloor[2].trace.degraded).toBe(true)
+  })
+
+  it('真实对局：画像随层演进，挑战等级随之递进（观察→试探→反制）', () => {
+    const { run } = mustParse(guardrailRun)
+    const byFloor = Object.fromEntries(run.floors.map((f) => [f.floorIndex, f]))
+
+    // 置信度上升是"画像在建立"的直接证据；固定画像的夹具做不到这一点
+    expect(byFloor[1].profile.confidence).toBeLessThan(byFloor[2].profile.confidence)
+    expect(byFloor[0].decision.challengeLevel).toBe('Stable')
+    expect(byFloor[1].decision.challengeLevel).toBe('Pressure')
+    expect(byFloor[2].decision.challengeLevel).toBe('Counter')
+  })
+
   it('护栏样例：被拦的意图仍然完整保留（否则页面无从展示"想改什么"）', () => {
-    const { run } = mustParse(guardrailSample)
+    const { run } = mustParse(guardrailIdeal)
     const f1 = run.floors.find((f) => f.floorIndex === 1)!
 
     // 日志存的是**护栏前**的原始 Intent，不是降级后的结果
@@ -104,15 +134,21 @@ describe('护栏名归一化', () => {
     expect(normalizeGuard('')).toBe('')
   })
 
-  it('归一化后仍保留原值，便于排查契约漂移', () => {
-    const { run } = mustParse(guardrailSample)
-    const v = run.floors.find((f) => f.floorIndex === 1)!.validation.violations[0]
-    expect(v.guard).toBe('Conflict')
-    // rawGuard 存的是文件里的原样。**故意不写死成某一种形式**：
-    // 现有样例导出于 UE 侧修复之前（带 ESHMGuardrail:: 前缀），修复后重导会是裸名，
-    // 两种都对——把任一种钉死，都会让另一种情况下这条测试无故变红。
-    expect(['Conflict', 'ESHMGuardrail::Conflict']).toContain(v.rawGuard)
-    expect(normalizeGuard(v.rawGuard)).toBe(v.guard)
+  it('两种形式都能吃下，且归一化后结果一致', () => {
+    // 这两份样例恰好一份在 UE 修复前导出、一份在修复后导出，
+    // 于是真实覆盖了契约漂移的两端——不需要造数据。
+    const ideal = mustParse(guardrailIdeal).run.floors.find((f) => f.floorIndex === 1)!
+    const real = mustParse(guardrailRun).run.floors.find((f) => f.floorIndex === 1)!
+
+    expect(ideal.validation.violations[0].rawGuard).toBe('ESHMGuardrail::Conflict')
+    expect(real.validation.violations[0].rawGuard).toBe('Conflict')
+
+    // 原值不同，归一化后必须是同一个
+    expect(ideal.validation.violations[0].guard).toBe('Conflict')
+    expect(real.validation.violations[0].guard).toBe('Conflict')
+    expect(normalizeGuard(ideal.validation.violations[0].rawGuard)).toBe(
+      normalizeGuard(real.validation.violations[0].rawGuard),
+    )
   })
 
   it('未知护栏原样透传，不被吞掉', () => {

@@ -21,7 +21,8 @@ import {
 import { parseDecisionLog } from './parseDecisionLog'
 import type { DecisionRun } from './decisionLog'
 import greenSample from '../../../Docs/samples/DecisionLog_Sample.json'
-import guardrailSample from '../../../Docs/samples/DecisionLog_Guardrail.json'
+import guardrailRun from '../../../Docs/samples/DecisionLog_Guardrail_Run.json'
+import guardrailIdeal from '../../../Docs/samples/DecisionLog_Guardrail_Ideal.json'
 
 function runOf(raw: unknown): DecisionRun {
   const r = parseDecisionLog(raw)
@@ -49,18 +50,32 @@ describe('computeRunStats · 真实样例（数字须与手算一致）', () => 
     expect(s.avgElapsedMs).toBeCloseTo((3721.015625 + 2804.269775390625) / 2, 3)
   })
 
-  it('护栏样例：三层被拦、三层降级，分道各一次', () => {
-    const s = computeRunStats(runOf(guardrailSample))
+  it('理想夹具：三层被拦、三层降级，分道各一次', () => {
+    const s = computeRunStats(runOf(guardrailIdeal))
 
+    // 四层。**这不是一局游戏**——F3 在真实对局里到不了（TotalFloors=3），
+    // 这份是控制台逐层调出来的夹具，存在的意义只是证明三道护栏结构上都拦得住。
     expect(s.totalFloors).toBe(4)
-    expect(s.llmDirect).toBe(0) // 这一局根本没走 LLM，全是 Replay
+    expect(s.llmDirect).toBe(0) // 没走 LLM，Intent 全由回放脚本注入
     expect(s.degraded).toBe(3)
     expect(s.violations).toBe(3)
     expect(s.byGuard).toEqual({ Schema: 1, Budget: 1, Conflict: 1, Fairness: 0 })
   })
 
-  it('护栏样例：回放是同步的，三层耗时都在亚毫秒级', () => {
-    const s = computeRunStats(runOf(guardrailSample))
+  it('真实对局：三层形状，拦 2 次降 2 次', () => {
+    const s = computeRunStats(runOf(guardrailRun))
+
+    expect(s.totalFloors).toBe(3)
+    expect(s.llmDirect).toBe(0)
+    expect(s.degraded).toBe(2)
+    expect(s.violations).toBe(2)
+    // 真实一局里只有 F1/F2 会走 Provider，所以最多两次拦截——
+    // 三道全亮是夹具才做得到的理想情况
+    expect(s.byGuard).toEqual({ Schema: 0, Budget: 1, Conflict: 1, Fairness: 0 })
+  })
+
+  it('理想夹具：回放是同步的，三层耗时都在亚毫秒级', () => {
+    const s = computeRunStats(runOf(guardrailIdeal))
     // F0 观察层 0ms 不计入；F1/F2/F3 走回放 Provider，读内存没有等待
     expect(s.timedFloors).toBe(3)
     expect(s.avgElapsedMs).toBeGreaterThan(0)
@@ -149,7 +164,7 @@ describe('degradeKind · 两种降级的 rawIntent 含义不同，必须分开',
   })
 
   it('护栏拒绝（降级②）→ rejected，rawIntent 是被拒的原件', () => {
-    const run = runOf(guardrailSample)
+    const run = runOf(guardrailIdeal)
     for (const idx of [1, 2, 3]) {
       const f = run.floors.find((x) => x.floorIndex === idx)!
       expect(degradeKind(f)).toBe('rejected')
@@ -184,7 +199,7 @@ describe('narrationPair · 台词在降级后会被换成本地库的', () => {
   })
 
   it('护栏拒绝后，被拦的台词与实际播出的台词都要留下', () => {
-    const run = runOf(guardrailSample)
+    const run = runOf(guardrailIdeal)
     const f1 = run.floors.find((x) => x.floorIndex === 1)!
     const pair = narrationPair(f1)
 
@@ -193,9 +208,22 @@ describe('narrationPair · 台词在降级后会被换成本地库的', () => {
     expect(pair.actual).not.toBe(pair.rejected)
   })
 
+  it('真实对局里同样如此，且实际台词与挑战等级对得上', () => {
+    const run = runOf(guardrailRun)
+    const f1 = run.floors.find((x) => x.floorIndex === 1)!
+    const pair = narrationPair(f1)
+
+    expect(pair.rejected).toBe('你的箭袋会更浅，你的箭也会更钝。')
+    // 本地库按 ChallengeLevel 选句：F1 判定为 Pressure，对应这一句
+    // （SHMLocalProvider.cpp:204）。夹具因为画像写死成高置信度，判到了 Counter，
+    // 所以两份样例同一层的实际台词不同——这不是矛盾，是输入不同。
+    expect(f1.decision.challengeLevel).toBe('Pressure')
+    expect(pair.actual).toBe('你走得太顺了。镜中的试炼，该加深了。')
+  })
+
   it('观察层 rawIntent 为空，不该显示一句空的"被拦台词"', () => {
     // F0 压根不调用 Provider，rawIntent.narration 是空串
-    const run = runOf(guardrailSample)
+    const run = runOf(guardrailIdeal)
     const f0 = run.floors.find((x) => x.floorIndex === 0)!
     expect(narrationPair(f0).rejected).toBeUndefined()
     expect(narrationPair(f0).actual).toBe('第一层。我只是在看。')
