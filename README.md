@@ -148,7 +148,6 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | `BehaviorRecorder`（链路 ①） | ✅ 已完成 |
 | `ProfileAnalyzer`（链路 ②，五维） | ✅ 已完成 |
 | `DirectorCore` + 四道护栏（链路 ③⑤⑥） | ✅ 已完成 · Intent/Decision 类型分离 · 规则表 CSV 查表 |
-| `IAIProvider`（链路 ④） | 🟡 `FSHMLocalProvider` 已完成（降级终点，单独即完整导演）；Llm / Replay 两实现计划中 |
 | 单元测试（画像 + 护栏 + Provider + 遭遇 + 武器 + JSON + 回放 + 日志契约） | ✅ **53/53 全绿** · [`Docs/TestResults.md`](Docs/TestResults.md) |
 | 决策链路端到端 | ✅ 控制台 `SHM.DumpDecision` / `SHM.DumpDecisionAsync` |
 | 武器切换 + 弓（画像分化的输入源） | ✅ 已完成 · 攻击按 AttackPattern 分发 |
@@ -157,7 +156,10 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | `IAIProvider` 三实现（链路 ④） | ✅ Local（降级终点）· **Llm**（OpenAI 兼容，异步）· **Replay**（确定性回放） |
 | **三级降级链路** | ✅ Provider 失败 → 护栏拒绝 → 安全兜底，每级留日志；**无 key/断网完整可玩** |
 | 决策日志（含护栏前 RawIntent + 溯源） | ✅ 一局结束自动导出 JSON（`schemaVersion` 契约，回放/可视化共用） |
-| 导演报告 UI（链路 ⑦） | ⬜ 未开始（当前用屏显台词占位） |
+| **导演报告卡（链路 ⑦）** | ✅ 层间弹出「我看到的 → 本层调整 → 白泽台词 → 决策溯源」，读完才开打 |
+| **镜界时间轴** | ✅ `SHM.Timeline` 整局回放：想改什么 → 护栏拦没拦 → 实改什么 |
+| **AI 导演开/关对照** | ✅ `SHM.Director 0/1`，关闭后退化为固定难度刷怪，用于对照演示 |
+| 本局统计（简历数字来源） | ✅ `SHM.Stats`：护栏分道拦截数 · 降级率 · 决策耗时 |
 
 开发过程记录：[`Docs/Sprint开发总结.md`](Docs/Sprint开发总结.md)（复盘，含设计判断与修复教训）· [`Docs/踩坑记录.md`](Docs/踩坑记录.md)（19 条，每条含现象/原因/解法/规则）
 
@@ -167,6 +169,23 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 > 台词「箭矢不够用的时候，你还能保持从容吗？」。第 ① 条是"护栏确实在约束 LLM"的实测证据。
 
 **范围与每一条取舍的理由见 [`Docs/DECISIONS.md`](Docs/DECISIONS.md)**，包含 20 条决策记录（砍掉什么、为什么砍、代价是什么、以及时间不够时的削减顺序）。
+
+---
+
+## 想快速判断这个项目？跑这四条命令
+
+进 PIE 后打开控制台（`` ` ``）：
+
+| 命令 | 看什么 |
+|---|---|
+| `SHM.DumpDecisionAsync ranger 2` | 走真实 Provider 跑一次决策，打印「出自谁 · 耗时 · 护栏拦截几项」 |
+| `SHM.Timeline` | **整局回放**：每层「想改什么（护栏前）→ 护栏拦没拦 → 实改什么（带数值）」 |
+| `SHM.Director 0` | 关掉 AI 导演，再打一局 —— 三层配比一个样，白泽沉默。**对照才能证明针对是真的** |
+| `SHM.Stats` | 本局统计：护栏分道拦截数 · 降级率 · 决策平均耗时 |
+
+不想跑项目，看这两样也够：
+- [`Docs/samples/`](Docs/samples/) 里的决策日志样例（一局的完整链路，含护栏前后对照）
+- 上面那段 DeepSeek 实测记录
 
 ---
 
