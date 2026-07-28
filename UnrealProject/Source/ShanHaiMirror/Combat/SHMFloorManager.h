@@ -38,6 +38,7 @@ private:
 	void HandleRoomCleared();
 	void EndFloor();
 	void ShowDirectorMessage(const FDirectorDecision& Decision) const;
+	class ASHMDirectorHUD* GetDirectorHUD() const;
 	bool IsPlayerDead() const;
 
 	// 层间过场时长。LLM 往返被它掩盖——但若决策来得更慢，StartFloor 会继续等

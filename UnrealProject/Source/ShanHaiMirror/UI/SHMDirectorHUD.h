@@ -26,24 +26,49 @@ class SHANHAIMIRROR_API ASHMDirectorHUD : public AHUD
 public:
 	virtual void DrawHUD() override;
 
-	// 弹出报告卡（层间调用）。Duration 秒后自动淡出
+	// 弹出报告卡（层间调用）
 	void ShowDirectorReport(const FPlayerProfile& Profile, const FDirectorDecision& Decision,
-	                        int32 FloorIndex, float Duration = 6.f);
+	                        int32 FloorIndex);
 
-	// 立即收起（玩家跳过 / 进入战斗）
+	// 立即收起
 	void HideDirectorReport();
 
+	// --- 供 FloorManager 判断「能不能开打了」---
+	bool IsReportShowing() const { return bShowingReport; }
+
+	// 玩家是否已经看够了：过了最短阅读时间且（按了继续键 或 到了自动关闭时间）
+	bool IsReportAcknowledged() const;
+
+	// 卡片已显示多久
+	float GetReportElapsed() const;
+
+	// 最短阅读时间——防手滑瞬间跳过（也保证录屏里卡片一定看得见）
+	static constexpr float MinReadSeconds  = 1.2f;
+	// 无操作时自动继续
+	static constexpr float AutoDismissSeconds = 7.f;
+
 private:
+	// 一行待绘制的文本
+	struct FReportLine
+	{
+		FString      Text;
+		FLinearColor Color;
+		float        Scale   = 1.f;
+		float        PadBelow = 0.f;
+	};
+
+	// 先把内容排成行表，再据此算卡片高度——**边框高度必须由内容算出**，
+	// 写死会在规则条数变化/出现降级行时溢出（实测踩过）
+	void BuildReportLines(TArray<FReportLine>& Out) const;
+
 	void DrawReportCard(float Alpha);
 	void DrawDirectorStatusBadge();
 
-	// 一行文本，返回本行占用的高度（供调用方累加 Y）
 	float DrawLine(const FString& Text, float X, float Y, const FLinearColor& Color,
 	               float Scale = 1.f) const;
 
 	bool  bShowingReport = false;
 	float ReportShownAt  = 0.f;
-	float ReportDuration = 6.f;
 
 	FPlayerProfile    CachedProfile;
 	FDirectorDecision CachedDecision;
