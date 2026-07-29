@@ -4,6 +4,10 @@
 
 这个仓库要展示的不是一个游戏，是一套**在游戏运行时约束 LLM 做决策**的架构：LLM 负责"选择与表达"，代码负责"计算与安全"，两者的边界由类型系统而非纪律来保证。断网时系统完整降级，玩家无感知。
 
+> **▶ [打开决策回放器](https://roseri66.github.io/ShanHaiMirror/)** —— 不用装引擎，点开就能看见
+> 「LLM 想改什么 → 四道护栏拦没拦 → 实际改了什么」。用的是真实对局导出的决策日志，
+> 也可以把你自己的 `DecisionLog_*.json` 拖进去。
+
 > 视觉是引擎 primitive + 纯色材质。**本项目不包含美术资源，视觉不在评估范围内。**
 
 ---
@@ -161,7 +165,7 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | **镜界时间轴** | ✅ `SHM.Timeline` 整局回放：想改什么 → 护栏拦没拦 → 实改什么 |
 | **AI 导演开/关对照** | ✅ `SHM.Director 0/1`，关闭后退化为固定难度刷怪，用于对照演示 |
 | 本局统计（简历数字来源） | ✅ `SHM.Stats`：护栏分道拦截数 · 降级率 · 决策耗时 |
-| **Web 决策回放器**（`WebReplay/`，D-21） | 🚧 进行中 · M0 数据契约层 + M1 概览/时间轴已完成（Vitest 46 个）· M2 护栏前后对照待做 |
+| **Web 决策回放器**（`WebReplay/`，D-21） | ✅ M0–M4 完成 · 护栏前后对照 · 画像雷达图 · 拖拽载入 · Vitest 84 个 · [Live Demo](https://roseri66.github.io/ShanHaiMirror/) |
 
 开发过程记录：[`Docs/Sprint开发总结.md`](Docs/Sprint开发总结.md)（六次开工复盘，含设计判断、计划偏离与修复教训）· [`Docs/踩坑记录.md`](Docs/踩坑记录.md)（23 条，每条含现象/原因/解法/规则）
 
@@ -174,7 +178,19 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 
 ---
 
-## 想快速判断这个项目？跑这四条命令
+## 最快的判断方式：[打开决策回放器](https://roseri66.github.io/ShanHaiMirror/)
+
+一屏静态页面，把一份决策日志渲染成「LLM 想改什么 → 四道护栏拦没拦 → 实际改了什么」。
+**左表没有「倍率」列，右表才有** —— "数值只在护栏之后产生"这条架构主张，
+在页面上是两张表的列数差，不是一句自我宣称。
+
+源码在 [`WebReplay/`](WebReplay/)：Vue 3 + TypeScript，不引 UI 框架、状态管理库和图表库
+（雷达图手写 SVG）。TS 类型是 [`SHMDecisionLogFormat.h`](UnrealProject/Source/ShanHaiMirror/Director/SHMDecisionLogFormat.h)
+的镜像 —— 日志格式是跨语言契约，靠类型挡住字段漂移。
+
+---
+
+## 想在引擎里看？跑这四条命令
 
 进 PIE 后打开控制台（`` ` ``）：
 
