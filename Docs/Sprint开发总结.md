@@ -39,11 +39,11 @@
 
 ### 做了什么
 
-- **事件总线类型化**（`0735e59`）：原骨架 `Broadcast(Tag, Actor*)` 传不了数据且零调用点；重做为带负载的 `FSHMGameplayEvent`（EventTag/SourceTag/ContextTag/Magnitude/bSuccess），并在战斗代码接线 9 个广播点（攻击/切武器/闪避/受击/低血/死亡/伤害/击杀，含武器→击杀归因）。
+- **事件总线类型化**（`2353661`）：原骨架 `Broadcast(Tag, Actor*)` 传不了数据且零调用点；重做为带负载的 `FSHMGameplayEvent`（EventTag/SourceTag/ContextTag/Magnitude/bSuccess），并在战斗代码接线 9 个广播点（攻击/切武器/闪避/受击/低血/死亡/伤害/击杀，含武器→击杀归因）。
 - **原生 GameplayTag**：以 `UE_DEFINE_GAMEPLAY_TAG` 取代 `RequestGameplayTag` 字符串查找，标签拼错从"运行时静默统计不到"变为"编译不过"；ini 中已 native 化的标签删除，保持单一来源。
 - **行为记录器** `USHMBehaviorRecorder`：订阅总线累积层快照。边界纪律：只计数不打分；不读世界时间（耗时由事件携带）——因此可脱离引擎单测。
-- **画像分析器** `FSHMProfileAnalyzer`（`ba5b167`）：纯静态函数（无状态/无 UObject/无随机数），五维 0-100 画像 + 主导原型 + 连续同打法置信度。
-- **输入修复**（`072e565`）：Standalone 下视口无键盘焦点，玩家开局不能动（踩坑 #12）。
+- **画像分析器** `FSHMProfileAnalyzer`（`c87a627`）：纯静态函数（无状态/无 UObject/无随机数），五维 0-100 画像 + 主导原型 + 连续同打法置信度。
+- **输入修复**（`c0396b3`）：Standalone 下视口无键盘焦点，玩家开局不能动（踩坑 #12）。
 
 ### 关键设计判断
 
@@ -57,7 +57,7 @@
 
 ### 做了什么
 
-- **Intent/Decision 类型分离**（`83b441a`，DECISIONS D-15 落地）：`FDirectorIntent`（Provider 输出，仅标签+等级）与 `FDirectorDecision`（玩法层输入，带数值）分离。Provider（含未来 LLM）**编译期构造不出带数值的决策**——"LLM 不接触数值"由类型系统强制，不靠纪律。
+- **Intent/Decision 类型分离**（`2e12078`，DECISIONS D-15 落地）：`FDirectorIntent`（Provider 输出，仅标签+等级）与 `FDirectorDecision`（玩法层输入，带数值）分离。Provider（含未来 LLM）**编译期构造不出带数值的决策**——"LLM 不接触数值"由类型系统强制，不靠纪律。
 - **规则表** `Data/RuleTable.csv`：纯文本入库可 diff；`FSHMRuleResolver` 查表出数值，是全链路数值唯一产生点。
 - **四道护栏** `FSHMDecisionValidator`：Schema（权重和/白名单/等级合法）· Budget（Σcost≤预算）· Conflict（互斥规则对）· Fairness（同规则不连续 3 层 + 低置信度禁重度）。纯函数（Cost/冲突信息建上下文时拷入），每道各有拒绝+通过路径测试。护栏是为 W4 不可信的 LLM 输出预建的安全网。
 - **本地 Provider** `FSHMLocalProvider`：确定性规则表决策，降级终点——单独即完整导演。远程画像→Tank/Rush 反制，近战画像→Shooter 消耗，高压→恢复期全杂兵零规则，低置信度→最多 1 条轻度。
@@ -68,9 +68,9 @@
 
 | 问题 | 提交 | 教训（踩坑号）|
 |---|---|---|
-| CSV 放 `Content/` 弹自动导入，误导入即双数据源 | `7f02adc` | #13：代码直读的数据放 Content 之外 |
-| F0 台词/配比仍输出"定向反制"，违背「首层只观察」 | `7c24ee2` | 设计不变量不能依赖"首层画像恰好为空"，须代码强制 |
-| DumpDecision 静默提前返回，零输出无法定位 | `7c24ee2` | #15：失败必须出声 |
+| CSV 放 `Content/` 弹自动导入，误导入即双数据源 | `00734e7` | #13：代码直读的数据放 Content 之外 |
+| F0 台词/配比仍输出"定向反制"，违背「首层只观察」 | `38e6c3a` | 设计不变量不能依赖"首层画像恰好为空"，须代码强制 |
+| DumpDecision 静默提前返回，零输出无法定位 | `38e6c3a` | #15：失败必须出声 |
 | `FInputModeGameOnly` 默认吞捕获点击，攻击/闪避间歇失灵 | 本批 | #14：修全局输入的验收单不能只覆盖出问题的路径 |
 
 ### 计划偏离（已同步进文档）

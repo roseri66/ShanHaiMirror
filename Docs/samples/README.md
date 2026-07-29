@@ -101,5 +101,5 @@ Local / Llm / Replay、是否降级、耗时多久。
 > **自己再生成一份**：打完整一局自动导出到 `UnrealProject/Saved/DecisionLogs/Run_*.json`，
 > 或游戏中控制台 `SHM.ExportDecisionLog`。文件为 UTF-8，任意 JSON 工具可直读。
 >
-> 要复现第 3 份的回放脚本：`git show 7d49202:UnrealProject/Data/ReplayScripts/Guardrail.json`，
+> 要复现第 3 份的回放脚本：`git show 324c74d:UnrealProject/Data/ReplayScripts/Guardrail.json`，
 > 存到 `UnrealProject/Data/ReplayScripts/` 下并设环境变量 `SHM_REPLAY_SCRIPT` 指向它。
