@@ -5,10 +5,13 @@
 // **左表没有倍率列，右表有且高亮**——「数值只在护栏之后产生」这条架构主张
 // 不靠文字说明，靠两张表的列数差摆在那里。
 //
-// 第 Ⅰ/Ⅱ 列（雷达图、约束）在 M3 补。
+// 上方是第 Ⅰ 列「我看到的」（画像）与第 Ⅱ 列「约束」（预算 + 候选集）——
+// 顺序即链路顺序：① 观察 → ③ 约束 → ④ 选择 → ⑤ 护栏 → ⑥ 数值。
 import { computed } from 'vue'
 import GuardBand from './GuardBand.vue'
 import WeightBars from './WeightBars.vue'
+import ProfileRadar from './ProfileRadar.vue'
+import ConstraintPanel from './ConstraintPanel.vue'
 import type { Floor } from '../types/decisionLog'
 import { ruleComparison } from '../types/floorView'
 import { degradeKind, formatMultiplier, narrationPair } from '../types/runStats'
@@ -58,6 +61,20 @@ const consultedProvider = computed(
           : 'Provider 未交出结果，左列已是本地产物，无原件可对照'
       }}</span>
     </p>
+
+    <!-- Ⅰ 我看到的 · Ⅱ 约束 —— 摆在对照之前，因为链路顺序就是先观察再约束 -->
+    <div class="inputs">
+      <section>
+        <h3>Ⅰ 我看到的 · 画像</h3>
+        <ProfileRadar :profile="floor.profile" />
+      </section>
+      <section>
+        <h3>Ⅱ 约束 · 候选集在这里就收敛了</h3>
+        <ConstraintPanel :floor="floor" />
+      </section>
+    </div>
+
+    <h3 class="sectionTitle">Ⅲ 想改 → 护栏 → 实改</h3>
 
     <div class="compare">
       <!-- 左：护栏前。**没有倍率列**，这是刻意的 -->
@@ -198,6 +215,25 @@ h3 {
   margin-top: 0.15rem;
   font-size: 0.75rem;
   opacity: 0.9;
+}
+
+/* Ⅰ/Ⅱ 两列：画像 + 约束 */
+.inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 17rem) minmax(0, 1fr);
+  gap: 1.25rem 1.75rem;
+  padding-bottom: 1.15rem;
+  margin-bottom: 1.15rem;
+  border-bottom: 1px solid var(--border);
+}
+@media (max-width: 46rem) {
+  .inputs {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sectionTitle {
+  margin-bottom: 0.7rem;
 }
 
 /* 三栏：左表 · 灯带 · 右表。窄屏堆叠，灯带落到中间仍保持因果顺序 */
