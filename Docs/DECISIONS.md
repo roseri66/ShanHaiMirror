@@ -300,13 +300,13 @@ USTRUCT() struct FDirectorDecision
 
 冻结时必须全部为真，否则不算完成：
 
-- [ ] 一局 3 层跑通，F1 观察 / F2 轻度 / F3 定向反制三种行为肉眼可辨
-- [ ] 拔掉网络（或强制 `FLlmProvider` 失败），游戏完整可玩，日志显示降级原因
-- [ ] `ProfileAnalyzer` 单测覆盖五个维度的边界情况（零攻击、单一武器 100%、均匀分布）
-- [ ] `DecisionValidator` 单测覆盖四道护栏各自的拒绝路径
-- [ ] 决策日志可导出 JSON，包含每层的 输入画像 → Intent → 护栏结果 → 最终 Decision
-- [ ] 开/关 Director 对照可在同一存档下切换
-- [ ] README 能让一个没读过代码的人在 10 分钟内讲清决策链路
+- [x] 一局 3 层跑通，F1 观察 / F2 轻度 / F3 定向反制三种行为肉眼可辨
+- [x] 拔掉网络（或强制 `FLlmProvider` 失败），游戏完整可玩，日志显示降级原因
+- [x] `ProfileAnalyzer` 单测覆盖五个维度的边界情况（零攻击、单一武器 100%、均匀分布）
+- [x] `DecisionValidator` 单测覆盖四道护栏各自的拒绝路径
+- [x] 决策日志可导出 JSON，包含每层的 输入画像 → Intent → 护栏结果 → 最终 Decision
+- [x] 开/关 Director 对照可在同一存档下切换
+- [x] README 能让一个没读过代码的人在 10 分钟内讲清决策链路
 
 ### 4.7 削减优先级（时间不够时按序砍）
 
@@ -355,7 +355,7 @@ USTRUCT() struct FDirectorDecision
 把一份 `DecisionLog_*.json` 渲染成一屏静态页面，讲清
 **「LLM 想改什么 → 四道护栏拦没拦 → 实际改了什么」**。纯前端、可离线、挂 GitHub Pages。
 
-设计全文：`C:\Dev\山海镜-前端回放器-设计.md`（2026-07-28 用户审阅通过）。
+设计全文：`C:\Dev\开发计划文档\山海镜-前端回放器-设计.md`。
 
 **为什么要它**
 

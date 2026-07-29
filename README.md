@@ -232,7 +232,7 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | **决策日志格式契约**（字段名与取值域的唯一真源，三方共用） | `Director/SHMDecisionLogFormat.h` |
 | Web 回放器的 TS 契约镜像 + 不信任 JSON 的解析器 | `WebReplay/src/types/` |
 | 范围决策与理由 | `Docs/DECISIONS.md` |
-| 分层架构与 AI Director 详细设计 | `Docs/TDD.md` §1、§3 |
+| 分层架构与 AI Director 详细设计 | `Docs/oldDocs/TDD.md` §1、§3 |
 | 事件总线 | `Source/ShanHaiMirror/Framework/SHMEventBus.h` |
 | 战斗组件 | `Source/ShanHaiMirror/Framework/SHM*Component.h` |
 | 敌人 AI（个体行为树，**与 AI 导演无关**） | `Source/ShanHaiMirror/Enemies/` |
@@ -268,7 +268,7 @@ setx SHM_LLM_TIMEOUT  "10"                          # 选填，秒
 
 ## 一些设计选择的理由
 
-**不使用 GAS。** GameplayEffect 确实天然适合规则修改器，但 ASC 复制、Attribute Set、GE 执行链这些复杂度是为多人联机设计的，单机俯视角完全用不到。改为自研 `USHMAttributeComponent`（Base/Flat/Pct 三段）+ 全量 GameplayTags。规则系统需要的"确定性、可测试、断网可跑"恰恰是自研最容易保证、GAS 最难保证的。详见 [`Docs/TDD.md`](Docs/TDD.md) §5.2。
+**不使用 GAS。** GameplayEffect 确实天然适合规则修改器，但 ASC 复制、Attribute Set、GE 执行链这些复杂度是为多人联机设计的，单机俯视角完全用不到。改为自研 `USHMAttributeComponent`（Base/Flat/Pct 三段）+ 全量 GameplayTags。规则系统需要的"确定性、可测试、断网可跑"恰恰是自研最容易保证、GAS 最难保证的。详见 [`Docs/oldDocs/TDD.md`](Docs/oldDocs/TDD.md) §5.2。
 
 **LLM 只在层间调用一次，不在战斗中调用。** 动作游戏里没人等 LLM。层间的一次性调用足够，多轮 agent 编排是自找麻烦。
 
