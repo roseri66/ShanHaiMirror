@@ -24,6 +24,16 @@
   --num: #8a6b12;
   --num-bg: rgba(212, 160, 23, 0.18);
 
+  /* 分类色（敌人原型）。取自 dataviz 规范 1–4 号槽位，浅深两套均已跑
+     validate_palette.js 通过：相邻 CVD ΔE 9.1（浅）/ 8.4（深），常视 22.9 / 19.8。
+     **顺序即 CVD 安全机制，不要重排；也不要为第 5 个类别生成新色。**
+     浅色下 slot-3/slot-4 对白底低于 3:1（验证器 WARN，不可忽略）——
+     补偿是堆叠条下方那行带数值的图例，见 WeightBars.vue。 */
+  --slot-1: #2a78d6;
+  --slot-2: #eb6834;
+  --slot-3: #1baf7a;
+  --slot-4: #eda100;
+
   --sans: system-ui, 'Segoe UI', 'Microsoft YaHei', Roboto, sans-serif;
   --mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
 
@@ -53,6 +63,12 @@
     --warn-bg: rgba(212, 160, 23, 0.15);
     --num: #e0b53c;
     --num-bg: rgba(212, 160, 23, 0.16);
+
+    /* 深色不是浅色的自动翻转，是同样八个色相为深色表面单独选的步级 */
+    --slot-1: #3987e5;
+    --slot-2: #d95926;
+    --slot-3: #199e70;
+    --slot-4: #c98500;
   }
 }
 

@@ -1,13 +1,12 @@
 <script setup lang="ts">
-// M1：概览 + 时间轴 + 点击切层。
-// 单层详情（M2 的护栏前后对照）还没做，此处先占位并把选中层的关键字段摊平显示，
-// 保证"点了有反应、数据确实换了"这件事现在就能验收。
+// 页面骨架：样例选择 + 出处横幅 + 概览（M1）+ 时间轴（M1）+ 单层详情（M2）。
+// 详情里第 Ⅰ/Ⅱ 列（雷达图、约束）在 M3 补。
 import { computed, ref, watch } from 'vue'
 import RunHeader from './components/RunHeader.vue'
 import FloorTimeline from './components/FloorTimeline.vue'
+import FloorDetail from './components/FloorDetail.vue'
 import { BUILTIN_SAMPLES, DEFAULT_SAMPLE_ID } from './samples'
 import { parseDecisionLog } from './types/parseDecisionLog'
-import { degradeKind, formatMultiplier, formatPercent, narrationPair } from './types/runStats'
 
 const sampleId = ref(DEFAULT_SAMPLE_ID)
 const sample = computed(
@@ -29,10 +28,6 @@ const currentFloor = computed(() => {
   if (!result.value.ok) return undefined
   return result.value.run.floors.find((f) => f.floorIndex === selected.value)
 })
-
-const narration = computed(() =>
-  currentFloor.value ? narrationPair(currentFloor.value) : { actual: '' },
-)
 </script>
 
 <template>
@@ -64,86 +59,7 @@ const narration = computed(() =>
         @select="selected = $event"
       />
 
-      <section v-if="currentFloor" class="detail">
-        <h2>F{{ currentFloor.floorIndex }} 详情</h2>
-        <p class="placeholder dim">
-          护栏前后对照、雷达图、白泽台词在 M2 / M3 建起来。以下是本层的原始字段，
-          用于验证"点击切层确实换了数据"。
-        </p>
-
-        <div class="cols">
-          <div>
-            <h3>护栏前 · rawIntent</h3>
-            <p v-if="!currentFloor.rawIntent.ruleIntents.length" class="dim">未提出调整</p>
-            <p v-else class="chips">
-              <span
-                v-for="r in currentFloor.rawIntent.ruleIntents"
-                :key="r.tag + r.level"
-                class="chip"
-              >{{ r.tag }} · {{ r.level }}</span>
-            </p>
-          </div>
-
-          <div>
-            <h3>护栏后 · decision</h3>
-            <p v-if="!currentFloor.decision.ruleModifiers.length" class="dim">无调整</p>
-            <p v-else class="chips">
-              <span
-                v-for="m in currentFloor.decision.ruleModifiers"
-                :key="m.tag + m.level"
-                class="chip num"
-              >{{ m.tag }} · {{ m.level }} <b>{{ formatMultiplier(m.multiplier) }}</b></span>
-            </p>
-          </div>
-
-          <div>
-            <h3>敌人配比</h3>
-            <p class="chips">
-              <span
-                v-for="(w, tag) in currentFloor.decision.enemyWeights"
-                :key="tag"
-                class="chip"
-              >{{ tag }} {{ formatPercent(w) }}</span>
-            </p>
-          </div>
-        </div>
-
-        <ul v-if="currentFloor.validation.violations.length" class="violations">
-          <li v-for="(v, i) in currentFloor.validation.violations" :key="i">
-            <b>{{ v.guard }}</b> {{ v.detail }}
-          </li>
-        </ul>
-
-        <p v-if="currentFloor.trace.degraded" class="degradeBanner">
-          已降级：{{ currentFloor.trace.degradeReason }}
-          <span class="kindNote">
-            {{
-              degradeKind(currentFloor) === 'rejected'
-                ? '（护栏拒绝 · 上方 rawIntent 是被拦下的原件）'
-                : '（Provider 无输出 · rawIntent 已是本地产物，无原件可对照）'
-            }}
-          </span>
-        </p>
-
-        <!--
-          降级后台词会被换成本地库的，所以两句都要留：
-          只显示 decision 会把本地生成的句子当成 LLM 说的话，
-          只显示 rawIntent 又会显示一句玩家其实没听到的话。
-        -->
-        <div v-if="narration.rejected" class="narrations">
-          <blockquote class="rejected">
-            <span class="who">被拦下的那句</span>
-            {{ narration.rejected }}
-          </blockquote>
-          <blockquote class="actual">
-            <span class="who">玩家实际听到的（本地）</span>
-            {{ narration.actual }}
-          </blockquote>
-        </div>
-        <blockquote v-else-if="narration.actual">
-          {{ narration.actual }}
-        </blockquote>
-      </section>
+      <FloorDetail v-if="currentFloor" :floor="currentFloor" />
     </template>
 
     <section v-else class="errors">
@@ -219,97 +135,6 @@ const narration = computed(() =>
 .provenance.fixture .tag {
   color: var(--warn);
   background: color-mix(in srgb, var(--warn) 20%, transparent);
-}
-
-.detail {
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  padding: 1rem 1.15rem;
-  background: var(--bg-panel);
-}
-.detail h2 {
-  font-size: 1.05rem;
-}
-.placeholder {
-  font-size: 0.82rem;
-  margin: 0.35rem 0 1rem;
-}
-
-.cols {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: 1rem 1.5rem;
-}
-.cols h3 {
-  font-size: 0.82rem;
-  color: var(--text-dim);
-  font-weight: 500;
-  margin-bottom: 0.4rem;
-}
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  margin: 0;
-}
-/* 数值只在护栏后产生——右列用不同底色让它一眼可见 */
-.chip.num {
-  color: var(--num);
-  background: var(--num-bg);
-  border-color: color-mix(in srgb, var(--num) 40%, transparent);
-}
-
-.violations {
-  margin: 1rem 0 0;
-  padding-left: 1.1rem;
-  font-size: 0.85rem;
-  color: var(--bad);
-}
-
-.degradeBanner {
-  margin: 0.75rem 0 0;
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.35rem;
-  background: var(--bad-bg);
-  border: 1px solid color-mix(in srgb, var(--bad) 35%, transparent);
-  color: var(--bad);
-  font-size: 0.85rem;
-}
-
-blockquote {
-  margin: 1rem 0 0;
-  padding-left: 0.9rem;
-  border-left: 3px solid var(--border-strong);
-  color: var(--text-h);
-  font-size: 0.95rem;
-}
-
-.kindNote {
-  display: block;
-  font-size: 0.78rem;
-  opacity: 0.85;
-}
-
-.narrations {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-  gap: 1rem;
-}
-.narrations .who {
-  display: block;
-  font-size: 0.72rem;
-  color: var(--text-dim);
-  margin-bottom: 0.15rem;
-}
-/* 被拦下的那句用删除线语义的暗色，实际播出的那句正常 —— 一眼分清谁是谁 */
-.narrations .rejected {
-  border-left-color: var(--bad);
-  color: var(--text-dim);
-  text-decoration: line-through;
-  text-decoration-color: color-mix(in srgb, var(--bad) 50%, transparent);
-}
-.narrations .actual {
-  border-left-color: var(--ok);
 }
 
 .errors {
