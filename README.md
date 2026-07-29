@@ -1,5 +1,7 @@
 # 山海镜 ShanHaiMirror
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **一个 AI 导演系统的架构实现。** UE 5.5 · C++ · 单人开发。
 
 这个仓库要展示的不是一个游戏，是一套**在游戏运行时约束 LLM 做决策**的架构：LLM 负责"选择与表达"，代码负责"计算与安全"，两者的边界由类型系统而非纪律来保证。断网时系统完整降级，玩家无感知。
@@ -275,3 +277,16 @@ setx SHM_LLM_TIMEOUT  "10"                          # 选填，秒
 **武器和敌人都带 GameplayTag，AI 读 Tag 不读名字。** 这是整个画像系统能工作的地基——加一种新武器不需要改任何 AI 代码。
 
 **`FReplayProvider` 值得单独提一句。** 它读预录 JSON 脚本产出决策，成本极低，但同时解决了两个问题：录屏时决策确定性可复现，集成测试时不依赖网络。一个抽象吃掉三个不同需求，这是保留 `IAIProvider` 而不是直接写 HTTP 调用的理由。
+
+---
+
+## 许可
+
+本仓库的代码与文档采用 **MIT 许可证**，见 [`LICENSE`](LICENSE)。
+
+覆盖范围是本仓库自有的内容：`UnrealProject/Source/`（C++）、`WebReplay/`（前端）、
+`UnrealProject/Data/`（CSV 数据表）、`UnrealProject/Content/` 下的蓝图与 `Docs/`。
+不含任何第三方素材——本项目不使用美术资源，视觉全部是引擎 primitive + 纯色材质。
+
+**Unreal Engine 本身不在此列**，它归 Epic Games 所有并受 [Unreal Engine EULA](https://www.unrealengine.com/eula) 约束。
+构建本项目需要你自行安装 UE 5.5 并接受该协议。
