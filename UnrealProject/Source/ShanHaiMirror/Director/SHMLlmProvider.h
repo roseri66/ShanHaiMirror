@@ -41,12 +41,20 @@ public:
 	static constexpr float DefaultTimeoutSeconds = 10.f;
 
 private:
-	void HandleResponse(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bConnectedOk,
-	                    FSHMOnIntentReady OnDone, double StartTime);
-
 	// 把请求/响应原文落盘（脱敏）——回放脚本、前端样例、"LLM 怎么翻车的"真实案例，
 	// 事后都无法补造。见 Saved/SHMLlmLogs/（已 gitignore）
 	void ArchiveExchange(const FString& RequestBody, const FString& ResponseBody, int32 HttpCode) const;
+
+	// 存活令牌 —— 防 use-after-free。
+	//
+	// HTTP 往返实测 4–10 秒，这期间玩家完全可能停掉 PIE：GameInstance 连同
+	// DirectorCore、连同本 Provider 一起析构，而请求仍在飞行。响应到达时
+	// 回调仍会执行，裸捕获 this 就会写进已释放的内存。
+	//
+	// 本类不是 UObject，用不了 CreateWeakLambda，故用共享指针当令牌：
+	// lambda 只捕获它的弱引用，pin 不住就说明 Provider 没了，直接返回。
+	// （UObject 那一侧由 DirectorCore 的 CreateWeakLambda 负责。）
+	TSharedPtr<uint8> LifetimeToken = MakeShared<uint8>(0);
 
 	FString ApiKey;    // 只在内存，日志里只出现「已配置/未配置」
 	FString BaseUrl;

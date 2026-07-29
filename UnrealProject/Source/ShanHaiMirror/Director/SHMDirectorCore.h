@@ -91,7 +91,21 @@ public:
 	// 关闭态下的固定决策（不读画像、不调 Provider、不出台词）
 	static FDirectorDecision MakeDirectorOffDecision();
 
+	// --- 测试专用装配 ---
+	//
+	// `Initialize()` 需要一个 `FSubsystemCollectionBase&`，自动化测试里造不出来；
+	// 而**三级降级是本项目最核心的宣称之一**（"第 ④ 步可以整体失败"、"断网完整可玩"），
+	// 此前只靠人工验收，没有任何自动化保护。这个缝让测试能塞一个必失败/必被拒的
+	// Provider 进来，把三条降级路径钉死。
+	//
+	// 只做 `Initialize()` 里的依赖装配（规则表 + 本地兜底 + 指定 Provider），
+	// **不读环境变量**——测试不该受本机配置影响。
+	void SetupForTesting(TUniquePtr<ISHMAIProvider> InProvider);
+
 private:
+	// Initialize() 与 SetupForTesting() 共用：装配规则表与降级终点
+	void LoadRuleTableAndFallback();
+
 	FDirectorContext BuildContext(const FPlayerProfile& Profile, int32 FloorIndex) const;
 
 	// Intent 就绪后的公共收尾：护栏 → 查表 → 记历史/日志 → 回调

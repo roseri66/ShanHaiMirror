@@ -153,7 +153,7 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | `BehaviorRecorder`（链路 ①） | ✅ 已完成 |
 | `ProfileAnalyzer`（链路 ②，五维） | ✅ 已完成 |
 | `DirectorCore` + 四道护栏（链路 ③⑤⑥） | ✅ 已完成 · Intent/Decision 类型分离 · 规则表 CSV 查表 |
-| 单元测试（画像 + 护栏 + Provider + 遭遇 + 武器 + JSON + 回放 + 日志契约） | ✅ **53/53 全绿** · [`Docs/TestResults.md`](Docs/TestResults.md) |
+| 单元测试（画像 + 护栏 + Provider + 遭遇 + 武器 + JSON + 回放 + 日志契约） | ✅ **57/57 全绿** · [`Docs/TestResults.md`](Docs/TestResults.md) |
 | 决策链路端到端 | ✅ 控制台 `SHM.DumpDecision` / `SHM.DumpDecisionAsync` |
 | 武器切换 + 弓（画像分化的输入源） | ✅ 已完成 · 攻击按 AttackPattern 分发 |
 | 敌人四原型 + 遭遇系统消费敌人权重 | ✅ 已完成 · 数据驱动（CSV）· 刷怪点导航网格投影 |
@@ -165,9 +165,9 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | **镜界时间轴** | ✅ `SHM.Timeline` 整局回放：想改什么 → 护栏拦没拦 → 实改什么 |
 | **AI 导演开/关对照** | ✅ `SHM.Director 0/1`，关闭后退化为固定难度刷怪，用于对照演示 |
 | 本局统计（简历数字来源） | ✅ `SHM.Stats`：护栏分道拦截数 · 降级率 · 决策耗时 |
-| **Web 决策回放器**（`WebReplay/`，D-21） | ✅ M0–M4 完成 · 护栏前后对照 · 画像雷达图 · 拖拽载入 · Vitest 84 个 · [Live Demo](https://roseri66.github.io/ShanHaiMirror/) |
+| **Web 决策回放器**（`WebReplay/`，D-21） | ✅ M0–M5 完成并上线 · 护栏前后对照 · 画像雷达图 · 拖拽载入 · Vitest 84 个 · [Live Demo](https://roseri66.github.io/ShanHaiMirror/) |
 
-开发过程记录：[`Docs/Sprint开发总结.md`](Docs/Sprint开发总结.md)（六次开工复盘，含设计判断、计划偏离与修复教训）· [`Docs/踩坑记录.md`](Docs/踩坑记录.md)（24 条，每条含现象/原因/解法/规则）
+开发过程记录：[`Docs/Sprint开发总结.md`](Docs/Sprint开发总结.md)（六次开工复盘，含设计判断、计划偏离与修复教训）· [`Docs/踩坑记录.md`](Docs/踩坑记录.md)（25 条，每条含现象/原因/解法/规则）
 
 > **实测记录（DeepSeek `deepseek-chat`，OpenAI 兼容端点）**：单次决策往返 3.8–5.0s。
 > 三次真实调用分别走通了三条路径——① LLM 同时选中互斥规则（弹药↓ + 远程伤害↓，

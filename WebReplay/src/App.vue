@@ -37,11 +37,20 @@ watch(sampleId, () => {
 const selected = ref(0)
 // 换来源后原来的层号可能不存在了，回到第一层。
 // 不这么做的话详情区会空着，看起来像点击失效。
-watch(result, (r) => {
-  if (r.ok && !r.run.floors.some((f) => f.floorIndex === selected.value)) {
-    selected.value = r.run.floors[0]?.floorIndex ?? 0
-  }
-})
+//
+// **immediate 是必须的**：初值 0 等于假设"日志的首层一定是 F0"。
+// 三份内置样例碰巧都满足，所以这个假设一直没暴露 —— 但换个默认样例、
+// 或首屏就载入一份从 F1 开始的日志，详情区会静默空白且不给任何提示。
+// 不能让正确性依赖于数据的巧合。
+watch(
+  result,
+  (r) => {
+    if (r.ok && !r.run.floors.some((f) => f.floorIndex === selected.value)) {
+      selected.value = r.run.floors[0]?.floorIndex ?? 0
+    }
+  },
+  { immediate: true },
+)
 
 const currentFloor = computed(() => {
   if (!result.value.ok) return undefined

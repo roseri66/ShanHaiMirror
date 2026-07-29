@@ -53,10 +53,8 @@ FDirectorDecision USHMDirectorCore::MakeDirectorOffDecision()
 	return Decision;
 }
 
-void USHMDirectorCore::Initialize(FSubsystemCollectionBase& Collection)
+void USHMDirectorCore::LoadRuleTableAndFallback()
 {
-	Super::Initialize(Collection);
-
 	// 规则表：纯文本 CSV 入库（可 diff），运行时构建 DataTable。
 	// 注意路径在 <项目>/Data/ 而不是 Content/——Content 被编辑器自动导入器监视，
 	// 放 CSV 会弹"导入为 DataTable"提示，一旦导入就成了 CSV/uasset 双数据源（踩坑 #13）。
@@ -71,6 +69,20 @@ void USHMDirectorCore::Initialize(FSubsystemCollectionBase& Collection)
 
 	// 降级终点：永远在场，与主 Provider 是谁无关
 	LocalFallback = MakeUnique<FSHMLocalProvider>();
+}
+
+void USHMDirectorCore::SetupForTesting(TUniquePtr<ISHMAIProvider> InProvider)
+{
+	LoadRuleTableAndFallback();
+	Provider = MoveTemp(InProvider);
+	ResetRun();
+}
+
+void USHMDirectorCore::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+
+	LoadRuleTableAndFallback();
 
 	// --- Provider 选择 ---
 	// 优先级：回放（显式开启，录屏/测试用）→ LLM（key 就位）→ 本地
@@ -290,7 +302,13 @@ void USHMDirectorCore::DecideForFloorAsync(const FPlayerProfile& Profile, int32 
 	const double  StartTime    = FPlatformTime::Seconds();
 
 	// ④ CHOOSE（异步；本地/回放会在此调用内立即回调）
-	Provider->RequestIntentAsync(Ctx, FSHMOnIntentReady::CreateLambda(
+	//
+	// **必须用 CreateWeakLambda 而不是 CreateLambda**：LLM 是 4–10 秒的 HTTP 往返，
+	// 这期间玩家可能停掉 PIE —— GameInstance 连同本子系统一起析构，而 HTTP 请求
+	// 仍在飞行。裸捕获 this 的话，响应到达时会写进已释放的对象（use-after-free）。
+	// 弱 lambda 在宿主 UObject 失效后直接不执行。
+	// （FloorManager 早就是这么写的，这里此前是漏的。）
+	Provider->RequestIntentAsync(Ctx, FSHMOnIntentReady::CreateWeakLambda(this,
 		[this, Ctx, ProviderId, StartTime, OnDecision](const FDirectorIntent& Intent, bool bSuccess)
 	{
 		const float ElapsedMs = static_cast<float>((FPlatformTime::Seconds() - StartTime) * 1000.0);

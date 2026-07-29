@@ -270,7 +270,7 @@ README 里"护栏确实在约束 LLM"是全项目最核心的主张，但此前*
 ### 数据（累计六次开工）
 
 - 提交 45+ 个，全部 conventional commits，特性分支均 `--no-ff` 合回 master
-- 单元测试：UE 侧 **53/53 绿**（全程 TDD，`Docs/TestResults.md` 留档）+ 前端 Vitest **84 个**
+- 单元测试：UE 侧 **53/53 绿**（全程 TDD，`Docs/TestResults.md` 留档）+ 前端 Vitest **84 个**（UE 侧 53 → 57，含三级降级）
 - 踩坑记录 **23 条**（#9–#23 为重定位后新增），每条含现象/原因/解法/规则
 - 净增代码约 8000 行（UE）+ 约 1500 行（WebReplay）
 - 决策链路 ①–⑦ 全部落地，**断网/无 key 完整可玩**，且可见、可对照、可回放
@@ -288,6 +288,61 @@ README 里"护栏确实在约束 LLM"是全项目最核心的主张，但此前*
 不可让人对整份数据起疑。
 
 **② 修复引入回归的模式出现了两次，值得警惕。** #12 的修复引入 #14（修键盘焦点，吞了鼠标点击）；"预算=0 实现观察层"的巧思漏掉了台词与配比。共同模式：**改全局状态时只验证了当初出问题的那条路径**。对策已写进踩坑规则：输入模式类修改的验收至少覆盖开局键盘/开局鼠标/焦点往返后的键盘鼠标；设计不变量必须由代码强制而非数据巧合。
+
+---
+
+## 代码审查（2026-07-29，clear 前的完整过一遍）
+
+对 UE 侧 8356 行 + 前端约 3600 行做了一次系统性审查，按"项目宣称了什么"排优先级
+（四个不变量都落在 Director 层，从那里开始）。**发现 4 项，全部已修。**
+
+### ① [高] LLM 异步回调持有裸指针 —— use-after-free
+
+`SHMDirectorCore.cpp` 与 `SHMLlmProvider.cpp` 的异步回调都裸捕获 `this`。
+LLM 是 4–10 秒的 HTTP 往返，**这期间玩家停掉 PIE**，GameInstance 连同子系统、
+连同 Provider 一起析构，而请求仍在飞行 —— 响应到达时会写进已释放的内存。
+窗口每层一次，且正好落在层间过场，实际很容易撞上。
+
+判断它是疏漏而非取舍的依据：`SHMFloorManager` 里早就用的是 `CreateWeakLambda`。
+
+修：DirectorCore 侧改用 `CreateWeakLambda(this, ...)`；`FSHMLlmProvider` 不是 UObject，
+用不了弱 lambda，改为持有一个 `TSharedPtr<uint8>` 存活令牌，回调里 pin 不住就直接返回。
+
+### ② [中] 三级降级零自动化测试 —— 补了 4 个
+
+"第 ④ 步可以整体失败"是四个不变量之一，也是"断网/无 key 完整可玩"的全部依据，
+**此前只靠人工验收**，而人工覆盖不到"Provider 交出畸形数据""连本地兜底都被拒"这类路径。
+
+新增 `Tests/SHMDegradationTest.cpp`：降级①（Provider 交不出结果）、
+降级②（护栏拒绝，且**日志必须留下被拒的原件**）、观察层短路、
+以及"回调在任何路径下恰好触发一次"的契约。53 → 57 个测试。
+
+为此在 `USHMDirectorCore` 上开了一个明确命名的测试缝 `SetupForTesting()`：
+`Initialize()` 需要 `FSubsystemCollectionBase&`，自动化测试里造不出来。
+它只做依赖装配，**不读环境变量**——测试不该受本机配置影响。
+
+判据不只是"没崩"，而是降级后的**语义正确**：有没有标 degraded、原因是否可读、
+被拒的原件有没有留下（否则前端那一屏无从渲染）。
+**做了变异测试确认这些断言有牙**：注掉护栏拒绝路径里的 `bFinalDegraded = true`，
+只有 `GuardrailRejects` 变红、其余三条不受影响 —— 说明断言是精准的而非一破全红。
+
+### ③ [低] 前端首层选择依赖数据巧合
+
+`App.vue` 的 `selected` 初值为 0，等于假设"日志首层一定是 F0"。三份内置样例碰巧都满足，
+所以一直没暴露；换个默认样例或首屏载入一份从 F1 起的日志，详情区会**静默空白**。
+修：`watch` 加 `immediate: true`。
+
+### ④ [清理] 死声明
+
+`SHMLlmProvider.h` 声明了 `HandleResponse` 但 .cpp 用 lambda 实现，从未定义。已删。
+
+### 审查中确认无问题的部分
+
+- `ProfileAnalyzer` 的"纯函数"宣称成立：零 UObject / 零随机 / 零世界依赖，实测无引擎依赖
+- Fairness 护栏与 `BuildContext` 的数组下标都有边界保护（`Num() >= MaxConsecutiveFloors` 前置判断）
+- 无未保护的除法；`ZeroAttack_NoDivideByZero` 已覆盖
+- `DecideForFloor` 的同步回调按引用捕获是安全的（本地 Provider 在调用内立即回调，且有 `bGot` 兜底）
+- 53 个原有测试的覆盖面扎实：四道护栏各有拒绝+通过路径，画像五维含边界
 
 ---
 

@@ -58,10 +58,20 @@ void FSHMLlmProvider::RequestIntentAsync(const FDirectorContext& Context, FSHMOn
 	Request->SetContentAsString(Body);
 	Request->SetTimeout(TimeoutSeconds);
 
-	// 捕获 Body 供落档；OnDone 按值捕获，保证回调时仍有效
+	// 捕获 Body 供落档；OnDone 按值捕获，保证回调时仍有效。
+	// **WeakToken 必须捕获**：见头文件里 LifetimeToken 的说明 ——
+	// 玩家在 HTTP 往返途中停掉 PIE 时，本对象已析构而回调仍会执行。
+	const TWeakPtr<uint8> WeakToken = LifetimeToken;
 	Request->OnProcessRequestComplete().BindLambda(
-		[this, OnDone, StartTime, Body](FHttpRequestPtr Req, FHttpResponsePtr Resp, bool bOk)
+		[this, WeakToken, OnDone, StartTime, Body](FHttpRequestPtr Req, FHttpResponsePtr Resp, bool bOk)
 	{
+		// Provider 已随 GameInstance 析构：this 是野指针，一个字段都不能碰。
+		// 也不需要回调——等结果的 DirectorCore 同样已经不在了。
+		if (!WeakToken.IsValid())
+		{
+			return;
+		}
+
 		const int32 Code = Resp.IsValid() ? Resp->GetResponseCode() : 0;
 		const FString RespBody = Resp.IsValid() ? Resp->GetContentAsString() : FString();
 		ArchiveExchange(Body, RespBody, Code);
