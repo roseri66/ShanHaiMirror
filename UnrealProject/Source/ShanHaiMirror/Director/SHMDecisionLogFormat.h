@@ -13,6 +13,25 @@
 // 因此：**字段名只在本文件出现一次**，所有读写方引用这里的常量，不写字符串字面量。
 // 顶层第一个字段永远是 schemaVersion——格式演进时读取方据此决定怎么解析。
 //
+// ---------------------------------------------------------------------------
+// **契约要定死的不只是字段名，还有取值域。**
+//
+// 只规定 key 不规定 value，取值就会跟着实现细节漂移：曾经用
+// `UEnum::GetValueAsString()` 序列化护栏名，导出的是 "ESHMGuardrail::Conflict"——
+// 一个 C++ 类型名泄漏进了跨语言契约（三个消费方里有两个不是 C++）。
+// 见 Docs/踩坑记录.md #22。
+//
+// 枚举类字段一律写**裸枚举值名**，不带类型前缀、不带命名空间、不用 DisplayName：
+//   guard          Schema | Budget | Conflict | Fairness        （ESHMGuardrail）
+//   challengeLevel Recovery | Stable | Pressure | Counter | Evolution （EChallengeLevel）
+//   providerId     Local | Llm | Replay | ObserveFloor | Disabled
+//   level          light | medium | heavy                       （裸字符串，非枚举）
+// 标签类字段写完整 Tag 名（"Rule.Ammo" / "Enemy.Grunt" / "Archetype.Ranger"）。
+//
+// 序列化时**不要用为调试设计的转换函数**（GetValueAsString / ToString / %s）——
+// 它们的输出格式是给人看的，随时可能变，也不承诺跨语言可解析。
+// ---------------------------------------------------------------------------
+//
 // 顶层结构（一局一个文件）：
 // {
 //   "schemaVersion": 1,
@@ -43,6 +62,8 @@ namespace SHMLogFormat
 
 	// --- 层条目 ---
 	inline const TCHAR* Key_FloorIndex = TEXT("floorIndex");
+	// ⚠️ S1 暂不导出：字段名在此保留，但 RecordLogEntry 并不写它。
+	// 读取方必须把 snapshot 当**可选**处理（前端 TS 类型已标 `snapshot?`）。
 	inline const TCHAR* Key_Snapshot   = TEXT("snapshot");
 	inline const TCHAR* Key_Profile    = TEXT("profile");
 	inline const TCHAR* Key_Context    = TEXT("context");

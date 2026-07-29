@@ -1,0 +1,366 @@
+{
+  "schemaVersion": 1,
+  "_kind": "realRun",
+  "_note": "**真实对局导出**。玩家实打三层，FloorManager 在整局结束时自动导出（Run_ 前缀）。层号、画像、耗时、runId、时间戳全部原样未改，一个字段都没动。",
+  "_howToRead": "画像随对局演进：F1 置信度 0.50、F2 升到 0.70；挑战等级随之从 Stable → Pressure → Counter，这就是「观察 → 试探 → 反制」的递进。两层被护栏拦下并降级，台词也一并换成本地库的——比较 rawIntent.narration 与 decision.narration 即可看出。",
+  "_providerNote": "trace.providerId=Replay：本局的 Intent 由回放脚本注入，不是 LLM 现场产出的。构造的只有「AI 提出了什么」这一个输入；此后护栏判定、查表出数值、降级、本地重新决策、日志导出全部是真实代码跑出来的。因此它证明的是「护栏会拦下危险意图」，不是「LLM 产出过危险意图」。",
+  "runId": "C0D3B0E7-4746-95FB-F678-9FB3EF9F934C",
+  "startedAt": "2026-07-28T15:58:37.130Z",
+  "totalFloors": 3,
+  "floors": [
+    {
+      "floorIndex": 0,
+      "profile": {
+        "buildConcentration": 0,
+        "combatEfficiency": 0,
+        "resourceSurplus": 0,
+        "strategySwitch": 0,
+        "survivalPressure": 0,
+        "confidence": 0.5,
+        "dominantArchetype": "None"
+      },
+      "context": {
+        "challengeBudget": 0,
+        "availableRules": [
+          {
+            "tag": "Rule.Ammo",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.Ammo",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.Cooldown",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.Cooldown",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.Heal",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.Heal",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.MeleeDamage",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.MeleeDamage",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.RangedDamage",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.RangedDamage",
+            "level": "medium",
+            "cost": 20
+          }
+        ]
+      },
+      "rawIntent": {
+        "challengeLevel": "Stable",
+        "enemyWeights": {},
+        "ruleIntents": [],
+        "narration": "",
+        "reason": ""
+      },
+      "validation": {
+        "valid": true,
+        "violations": []
+      },
+      "decision": {
+        "challengeLevel": "Stable",
+        "enemyWeights": {
+          "Enemy.Grunt": 0.550000011920929,
+          "Enemy.Tank": 0.15000000596046448,
+          "Enemy.Rush": 0.15000000596046448,
+          "Enemy.Shooter": 0.15000000596046448
+        },
+        "ruleModifiers": [],
+        "narration": "第一层。我只是在看。",
+        "reason": "首层只观察：建立画像，不做任何调整。"
+      },
+      "trace": {
+        "providerId": "ObserveFloor",
+        "degraded": false,
+        "degradeReason": "",
+        "elapsedMs": 0
+      }
+    },
+    {
+      "floorIndex": 1,
+      "profile": {
+        "buildConcentration": 100,
+        "combatEfficiency": 91.66666412353516,
+        "resourceSurplus": 50,
+        "strategySwitch": 0,
+        "survivalPressure": 0,
+        "confidence": 0.5,
+        "dominantArchetype": "Archetype.Vanguard"
+      },
+      "context": {
+        "challengeBudget": 30,
+        "availableRules": [
+          {
+            "tag": "Rule.Ammo",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.Ammo",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.Cooldown",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.Cooldown",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.Heal",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.Heal",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.MeleeDamage",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.MeleeDamage",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.RangedDamage",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.RangedDamage",
+            "level": "medium",
+            "cost": 20
+          }
+        ]
+      },
+      "rawIntent": {
+        "challengeLevel": "Pressure",
+        "enemyWeights": {
+          "Enemy.Grunt": 0.44999998807907104,
+          "Enemy.Tank": 0.25,
+          "Enemy.Rush": 0.20000000298023224,
+          "Enemy.Shooter": 0.10000000149011612
+        },
+        "ruleIntents": [
+          {
+            "tag": "Rule.Ammo",
+            "level": "light"
+          },
+          {
+            "tag": "Rule.RangedDamage",
+            "level": "light"
+          }
+        ],
+        "narration": "你的箭袋会更浅，你的箭也会更钝。",
+        "reason": "玩家远程集中度高，同时压缩弹药与远程伤害以最大化针对性。"
+      },
+      "validation": {
+        "valid": false,
+        "violations": [
+          {
+            "guard": "Conflict",
+            "detail": "[Conflict] Rule.Ammo 与 Rule.RangedDamage 互斥"
+          }
+        ]
+      },
+      "decision": {
+        "challengeLevel": "Pressure",
+        "enemyWeights": {
+          "Enemy.Grunt": 0.550000011920929,
+          "Enemy.Tank": 0.15000000596046448,
+          "Enemy.Rush": 0.15000000596046448,
+          "Enemy.Shooter": 0.15000000596046448
+        },
+        "ruleModifiers": [
+          {
+            "tag": "Rule.MeleeDamage",
+            "level": "light",
+            "multiplier": 0.8999999761581421,
+            "cost": 10
+          }
+        ],
+        "narration": "你走得太顺了。镜中的试炼，该加深了。",
+        "reason": "战斗效率偏高，整体施压。"
+      },
+      "trace": {
+        "providerId": "Replay",
+        "degraded": true,
+        "degradeReason": "Replay 输出被护栏拒绝（1 项）",
+        "elapsedMs": 0.017900019884109497
+      }
+    },
+    {
+      "floorIndex": 2,
+      "profile": {
+        "buildConcentration": 100,
+        "combatEfficiency": 93.749755859375,
+        "resourceSurplus": 50,
+        "strategySwitch": 0,
+        "survivalPressure": 0,
+        "confidence": 0.699999988079071,
+        "dominantArchetype": "Archetype.Vanguard"
+      },
+      "context": {
+        "challengeBudget": 55,
+        "availableRules": [
+          {
+            "tag": "Rule.Ammo",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.Ammo",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.Cooldown",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.Cooldown",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.Heal",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.Heal",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.MeleeDamage",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.MeleeDamage",
+            "level": "medium",
+            "cost": 20
+          },
+          {
+            "tag": "Rule.RangedDamage",
+            "level": "light",
+            "cost": 10
+          },
+          {
+            "tag": "Rule.RangedDamage",
+            "level": "medium",
+            "cost": 20
+          }
+        ]
+      },
+      "rawIntent": {
+        "challengeLevel": "Counter",
+        "enemyWeights": {
+          "Enemy.Grunt": 0.4000000059604645,
+          "Enemy.Tank": 0.30000001192092896,
+          "Enemy.Rush": 0.20000000298023224,
+          "Enemy.Shooter": 0.10000000149011612
+        },
+        "ruleIntents": [
+          {
+            "tag": "Rule.Ammo",
+            "level": "medium"
+          },
+          {
+            "tag": "Rule.Cooldown",
+            "level": "medium"
+          },
+          {
+            "tag": "Rule.Heal",
+            "level": "medium"
+          },
+          {
+            "tag": "Rule.MeleeDamage",
+            "level": "medium"
+          }
+        ],
+        "narration": "这一层，我把每一条路都收紧一点。",
+        "reason": "玩家表现稳定，四个维度同时施压。"
+      },
+      "validation": {
+        "valid": false,
+        "violations": [
+          {
+            "guard": "Budget",
+            "detail": "[Budget] Σcost 80 超出预算 55"
+          }
+        ]
+      },
+      "decision": {
+        "challengeLevel": "Counter",
+        "enemyWeights": {
+          "Enemy.Grunt": 0.44999998807907104,
+          "Enemy.Shooter": 0.3499999940395355,
+          "Enemy.Tank": 0.10000000149011612,
+          "Enemy.Rush": 0.10000000149011612
+        },
+        "ruleModifiers": [
+          {
+            "tag": "Rule.MeleeDamage",
+            "level": "medium",
+            "multiplier": 0.800000011920929,
+            "cost": 20
+          },
+          {
+            "tag": "Rule.Cooldown",
+            "level": "medium",
+            "multiplier": 1.2999999523162842,
+            "cost": 20
+          }
+        ],
+        "narration": "刀锋所及皆是坦途？这一层试试够不到的敌人。",
+        "reason": "高置信度(0.70)定向反制 近战 打法。"
+      },
+      "trace": {
+        "providerId": "Replay",
+        "degraded": true,
+        "degradeReason": "Replay 输出被护栏拒绝（1 项）",
+        "elapsedMs": 0.004898756742477417
+      }
+    }
+  ]
+}

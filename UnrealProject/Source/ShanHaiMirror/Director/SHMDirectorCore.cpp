@@ -504,7 +504,11 @@ void USHMDirectorCore::RecordLogEntry(const FDirectorContext& Context, const FDi
 	for (const FSHMValidationViolation& V : Validation.Violations)
 	{
 		TSharedPtr<FJsonObject> VObj = MakeShared<FJsonObject>();
-		VObj->SetStringField(Key_Guard,  UEnum::GetValueAsString(V.Guard));
+		// **不能用 UEnum::GetValueAsString()**——它返回全限定名 "ESHMGuardrail::Conflict"，
+		// 把 C++ 类型名泄漏进了一份跨语言契约（本格式的三个消费方里有两个不是 C++）。
+		// GetNameStringByValue 只给枚举值本身。见 Docs/踩坑记录.md #22。
+		VObj->SetStringField(Key_Guard,
+			StaticEnum<ESHMGuardrail>()->GetNameStringByValue(static_cast<int64>(V.Guard)));
 		VObj->SetStringField(Key_Detail, V.Detail);
 		Violations.Add(MakeShared<FJsonValueObject>(VObj));
 	}

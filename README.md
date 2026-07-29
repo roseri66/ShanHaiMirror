@@ -4,6 +4,10 @@
 
 这个仓库要展示的不是一个游戏，是一套**在游戏运行时约束 LLM 做决策**的架构：LLM 负责"选择与表达"，代码负责"计算与安全"，两者的边界由类型系统而非纪律来保证。断网时系统完整降级，玩家无感知。
 
+> **▶ [打开决策回放器](https://roseri66.github.io/ShanHaiMirror/)** —— 不用装引擎，点开就能看见
+> 「LLM 想改什么 → 四道护栏拦没拦 → 实际改了什么」。用的是真实对局导出的决策日志，
+> 也可以把你自己的 `DecisionLog_*.json` 拖进去。
+
 > 视觉是引擎 primitive + 纯色材质。**本项目不包含美术资源，视觉不在评估范围内。**
 
 ---
@@ -161,19 +165,32 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | **镜界时间轴** | ✅ `SHM.Timeline` 整局回放：想改什么 → 护栏拦没拦 → 实改什么 |
 | **AI 导演开/关对照** | ✅ `SHM.Director 0/1`，关闭后退化为固定难度刷怪，用于对照演示 |
 | 本局统计（简历数字来源） | ✅ `SHM.Stats`：护栏分道拦截数 · 降级率 · 决策耗时 |
+| **Web 决策回放器**（`WebReplay/`，D-21） | ✅ M0–M4 完成 · 护栏前后对照 · 画像雷达图 · 拖拽载入 · Vitest 84 个 · [Live Demo](https://roseri66.github.io/ShanHaiMirror/) |
 
-开发过程记录：[`Docs/Sprint开发总结.md`](Docs/Sprint开发总结.md)（五次开工复盘，含设计判断、计划偏离与修复教训）· [`Docs/踩坑记录.md`](Docs/踩坑记录.md)（21 条，每条含现象/原因/解法/规则）
+开发过程记录：[`Docs/Sprint开发总结.md`](Docs/Sprint开发总结.md)（六次开工复盘，含设计判断、计划偏离与修复教训）· [`Docs/踩坑记录.md`](Docs/踩坑记录.md)（23 条，每条含现象/原因/解法/规则）
 
 > **实测记录（DeepSeek `deepseek-chat`，OpenAI 兼容端点）**：单次决策往返 3.8–5.0s。
 > 三次真实调用分别走通了三条路径——① LLM 同时选中互斥规则（弹药↓ + 远程伤害↓，
 > 对远程玩家是无解组合）被 **Conflict 护栏拒绝并降级**；② 超时降级；③ 直采通过，
 > 台词「箭矢不够用的时候，你还能保持从容吗？」。第 ① 条是"护栏确实在约束 LLM"的实测证据。
 
-**范围与每一条取舍的理由见 [`Docs/DECISIONS.md`](Docs/DECISIONS.md)**，包含 20 条决策记录（砍掉什么、为什么砍、代价是什么、以及时间不够时的削减顺序）。
+**范围与每一条取舍的理由见 [`Docs/DECISIONS.md`](Docs/DECISIONS.md)**，包含 21 条决策记录（砍掉什么、为什么砍、代价是什么、以及时间不够时的削减顺序）。MVP 冻结后的每一条扩展都要在 §7 先追一条显式决策——**不追决策就动手，等于自己破自己的规矩**。
 
 ---
 
-## 想快速判断这个项目？跑这四条命令
+## 最快的判断方式：[打开决策回放器](https://roseri66.github.io/ShanHaiMirror/)
+
+一屏静态页面，把一份决策日志渲染成「LLM 想改什么 → 四道护栏拦没拦 → 实际改了什么」。
+**左表没有「倍率」列，右表才有** —— "数值只在护栏之后产生"这条架构主张，
+在页面上是两张表的列数差，不是一句自我宣称。
+
+源码在 [`WebReplay/`](WebReplay/)：Vue 3 + TypeScript，不引 UI 框架、状态管理库和图表库
+（雷达图手写 SVG）。TS 类型是 [`SHMDecisionLogFormat.h`](UnrealProject/Source/ShanHaiMirror/Director/SHMDecisionLogFormat.h)
+的镜像 —— 日志格式是跨语言契约，靠类型挡住字段漂移。
+
+---
+
+## 想在引擎里看？跑这四条命令
 
 进 PIE 后打开控制台（`` ` ``）：
 
@@ -184,9 +201,21 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | `SHM.Director 0` | 关掉 AI 导演，再打一局 —— 三层配比一个样，白泽沉默。**对照才能证明针对是真的** |
 | `SHM.Stats` | 本局统计：护栏分道拦截数 · 降级率 · 决策平均耗时 |
 
-不想跑项目，看这两样也够：
-- [`Docs/samples/DecisionLog_Sample.json`](Docs/samples/DecisionLog_Sample.json) —— 真实对局导出的决策日志（近战打法，两层由 DeepSeek 直采，含护栏前后对照）
-- 上面那段 DeepSeek 实测记录
+不想跑项目，直接读[**三份样例日志**](Docs/samples/)也够——它们是同一套链路的三个典型场景，
+**都是引擎真实跑出来的，没有一份是手写 JSON**：
+
+| 样例 | 性质 | 证明什么 |
+|---|---|---|
+| [`DecisionLog_Sample.json`](Docs/samples/DecisionLog_Sample.json) | 真实对局 · LLM 直采 | 顺利路径跑得通，LLM 确实承担"选择与表达" |
+| [`DecisionLog_Guardrail_Run.json`](Docs/samples/DecisionLog_Guardrail_Run.json) | 真实对局 · **护栏拦下 2 次** | 护栏在真实对局中确实拦截并降级，游戏不中断；画像随层演进（置信度 0.50→0.70），等级递进 Stable→Pressure→Counter |
+| [`DecisionLog_Guardrail_Ideal.json`](Docs/samples/DecisionLog_Guardrail_Ideal.json) | **控制台夹具 · 非对局** | 三道护栏结构上都拦得住（刻意构造的理想情况，文件顶部已标注全部限制） |
+
+> 每份文件顶部都有 `_kind` / `_note` 字段说明它是怎么来的、有什么限制。
+> 第三份**不是一局游戏**：第 4 层在真实对局里到不了（`TotalFloors = 3`），
+> 画像是控制台写死的常量。它存在的意义只是证明三道护栏各自拦得住——
+> 真实对局里的护栏拦截看第二份。详见 [`Docs/samples/README.md`](Docs/samples/README.md)。
+
+加上上面那段 DeepSeek 实测记录，就是这个项目全部的"护栏在约束 LLM"的证据。
 
 ---
 
@@ -200,6 +229,8 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | **Intent/Decision 分离 + 四道护栏**（本项目核心主张的落点） | `Director/SHMDirectorTypes.h` · `Director/SHMDecisionValidator.h` |
 | 决策编排（③→⑥ 串联、观察层短路、安全兜底） | `Director/SHMDirectorCore.cpp` |
 | 单元测试（TDD 全程，53 用例） | `Source/ShanHaiMirror/Tests/` |
+| **决策日志格式契约**（字段名与取值域的唯一真源，三方共用） | `Director/SHMDecisionLogFormat.h` |
+| Web 回放器的 TS 契约镜像 + 不信任 JSON 的解析器 | `WebReplay/src/types/` |
 | 范围决策与理由 | `Docs/DECISIONS.md` |
 | 分层架构与 AI Director 详细设计 | `Docs/TDD.md` §1、§3 |
 | 事件总线 | `Source/ShanHaiMirror/Framework/SHMEventBus.h` |
