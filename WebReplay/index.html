@@ -1,10 +1,28 @@
 <!doctype html>
-<html lang="en">
+<!-- lang 必须是 zh-CN：整页中文却标 en，会影响字体选择与读屏软件的发音 -->
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>webreplay</title>
+
+    <!--
+      标题就是面试官浏览器标签页上显示的那行字。
+      Vite 模板默认的 "webreplay" 在一堆标签页里既认不出来也不像个作品。
+    -->
+    <title>山海镜 · 决策回放器</title>
+    <meta
+      name="description"
+      content="把一份决策日志渲染成一屏：LLM 想改什么 → 四道护栏拦没拦 → 实际改了什么。山海镜 AI 导演系统的决策可视化。"
+    />
+
+    <!-- 分享到 IM / 社交平台时的预览卡片 -->
+    <meta property="og:title" content="山海镜 · 决策回放器" />
+    <meta
+      property="og:description"
+      content="LLM 想改什么 → 四道护栏拦没拦 → 实际改了什么。数值只在护栏之后产生，这条架构主张在页面上是两张表的列数差。"
+    />
+    <meta property="og:type" content="website" />
   </head>
   <body>
     <div id="app"></div>
