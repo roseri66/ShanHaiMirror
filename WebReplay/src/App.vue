@@ -1,22 +1,41 @@
 <script setup lang="ts">
-// 页面骨架：样例选择 + 出处横幅 + 概览（M1）+ 时间轴（M1）+ 单层详情（M2）。
-// 详情里第 Ⅰ/Ⅱ 列（雷达图、约束）在 M3 补。
+// 页面骨架：来源选择（内置样例 / 拖入文件）+ 出处横幅 + 概览 + 时间轴 + 单层详情。
 import { computed, ref, watch } from 'vue'
 import RunHeader from './components/RunHeader.vue'
 import FloorTimeline from './components/FloorTimeline.vue'
 import FloorDetail from './components/FloorDetail.vue'
+import SourceBar from './components/SourceBar.vue'
 import { BUILTIN_SAMPLES, DEFAULT_SAMPLE_ID } from './samples'
-import { parseDecisionLog } from './types/parseDecisionLog'
+import { parseDecisionLog, type ParseResult } from './types/parseDecisionLog'
+import { loadFromFile } from './types/loadSource'
 
 const sampleId = ref(DEFAULT_SAMPLE_ID)
 const sample = computed(
   () => BUILTIN_SAMPLES.find((s) => s.id === sampleId.value) ?? BUILTIN_SAMPLES[0],
 )
 
-const result = computed(() => parseDecisionLog(sample.value.raw))
+/** 用户拖入的文件。为 null 时显示内置样例。 */
+const loaded = ref<{ name: string; result: ParseResult } | null>(null)
+
+const result = computed<ParseResult>(() =>
+  loaded.value ? loaded.value.result : parseDecisionLog(sample.value.raw),
+)
+
+async function onFile(file: File) {
+  loaded.value = { name: file.name, result: await loadFromFile(file) }
+}
+
+function backToSample() {
+  loaded.value = null
+}
+
+/** 换来源时选中层可能不存在了 */
+watch(sampleId, () => {
+  loaded.value = null
+})
 
 const selected = ref(0)
-// 换样例后原来的层号可能不存在了，回到第一层。
+// 换来源后原来的层号可能不存在了，回到第一层。
 // 不这么做的话详情区会空着，看起来像点击失效。
 watch(result, (r) => {
   if (r.ok && !r.run.floors.some((f) => f.floorIndex === selected.value)) {
@@ -32,23 +51,31 @@ const currentFloor = computed(() => {
 
 <template>
   <div class="page">
-    <div class="sampleBar">
-      <label for="sample">样例</label>
-      <select id="sample" v-model="sampleId">
-        <option v-for="s in BUILTIN_SAMPLES" :key="s.id" :value="s.id">{{ s.label }}</option>
-      </select>
-      <span class="dim hint">{{ sample.hint }}</span>
-    </div>
+    <SourceBar
+      :sample-id="sampleId"
+      :loaded-name="loaded?.name ?? null"
+      @update:sample-id="sampleId = $event"
+      @file="onFile"
+    />
 
     <!--
       出处横幅。**必须在页面上可见**——JSON 里的 _note 渲染不出来，
       而这个页面把每一份数据都摆成「本局概览 / runId / 层数」的样子，
       等于在暗示它是一局游戏。夹具被当成对局记录是这里最容易犯的诚信错误。
+
+      用户自己拖进来的文件，出处我们无从知晓，所以只能如实说"不知道"——
+      绝不能沿用上一份样例的标签，那会把别人的数据标成我们的真实对局。
     -->
-    <p class="provenance" :class="sample.kind">
+    <p v-if="loaded" class="provenance user">
+      <span class="tag">你载入的文件</span>
+      {{ loaded.name }} —— 出处由你自己掌握，本页只负责按决策日志格式渲染它。
+    </p>
+    <p v-else class="provenance" :class="sample.kind">
       <span class="tag">{{ sample.kind === 'realRun' ? '真实对局' : '脚本测试 · 非对局' }}</span>
       {{ sample.provenance }}
     </p>
+
+    <p v-if="!loaded" class="hint dim">{{ sample.hint }}</p>
 
     <template v-if="result.ok">
       <RunHeader :run="result.run" />
@@ -67,6 +94,10 @@ const currentFloor = computed(() => {
       <ul>
         <li v-for="(e, i) in result.errors" :key="i">{{ e }}</li>
       </ul>
+      <!-- 载入失败不能变成死路：一定要有一条回到能看的东西的路 -->
+      <p v-if="loaded" class="back">
+        <button type="button" @click="backToSample">← 回到内置样例</button>
+      </p>
     </section>
 
     <details v-if="result.warnings.length" class="warnings">
@@ -85,25 +116,10 @@ const currentFloor = computed(() => {
   padding: 1.5rem 1.25rem 4rem;
 }
 
-.sampleBar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-bottom: 1.25rem;
-  font-size: 0.85rem;
-}
-.sampleBar select {
-  font: inherit;
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.3rem;
-  border: 1px solid var(--border-strong);
-  background: var(--bg-panel);
-  color: var(--text-h);
-}
 .hint {
-  flex: 1 1 18rem;
-  min-width: 0;
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
 }
 
 .provenance {
@@ -135,6 +151,28 @@ const currentFloor = computed(() => {
 .provenance.fixture .tag {
   color: var(--warn);
   background: color-mix(in srgb, var(--warn) 20%, transparent);
+}
+/* 用户自己的文件：中性色。我们不知道它的出处，就不该给它任何背书或警告 */
+.provenance.user .tag {
+  color: var(--slot-1);
+  background: color-mix(in srgb, var(--slot-1) 15%, transparent);
+}
+
+.back {
+  margin: 0.85rem 0 0;
+}
+.back button {
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 0.3rem;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: var(--bad);
+  cursor: pointer;
+}
+.back button:hover {
+  background: color-mix(in srgb, var(--bad) 12%, transparent);
 }
 
 .errors {

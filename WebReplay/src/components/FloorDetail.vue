@@ -82,7 +82,7 @@ const consultedProvider = computed(
         <h3>护栏前 · Provider 提出</h3>
         <p v-if="!consultedProvider" class="empty dim">本层未调用 Provider</p>
         <p v-else-if="!rules.before.length" class="empty dim">未提出任何规则调整</p>
-        <table v-else>
+        <div v-else class="tableWrap"><table>
           <thead>
             <tr><th>规则</th><th>强度</th></tr>
           </thead>
@@ -92,7 +92,7 @@ const consultedProvider = computed(
               <td>{{ labelOf(RULE_LEVEL_LABELS, b.rule.level) }}</td>
             </tr>
           </tbody>
-        </table>
+        </table></div>
         <p v-if="rules.before.some((b) => b.status === 'dropped')" class="tag dropped">
           划掉的没有生效
         </p>
@@ -107,7 +107,7 @@ const consultedProvider = computed(
       <div class="side">
         <h3>护栏后 · 实际生效</h3>
         <p v-if="!rules.after.length" class="empty dim">无规则调整</p>
-        <table v-else>
+        <div v-else class="tableWrap"><table>
           <thead>
             <tr><th>规则</th><th>强度</th><th class="num">倍率</th><th class="cost">代价</th></tr>
           </thead>
@@ -119,7 +119,7 @@ const consultedProvider = computed(
               <td class="cost">{{ a.mod.cost }}</td>
             </tr>
           </tbody>
-        </table>
+        </table></div>
         <p v-if="rules.after.some((a) => a.status === 'added')" class="tag added">
           降级后新产生的
         </p>
@@ -256,10 +256,17 @@ h3 {
   padding-top: 1.35rem;
 }
 
+/* 表格窄屏放不下时，**在自己的容器里横向滚**——页面本身绝不能横向滚 */
+.tableWrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.8rem;
+  white-space: nowrap;
 }
 th,
 td {

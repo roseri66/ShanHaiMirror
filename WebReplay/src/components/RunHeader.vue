@@ -119,6 +119,12 @@ h1 {
 .meta dd {
   margin: 0;
   color: var(--text-h);
+  /* runId 是 36 字符的 GUID，窄屏放不下必须能断行，否则它一个人撑破整页 */
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.meta div {
+  min-width: 0;
 }
 
 .stats {
