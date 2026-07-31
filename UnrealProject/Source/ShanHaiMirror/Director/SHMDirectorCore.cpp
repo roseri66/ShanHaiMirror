@@ -6,6 +6,7 @@
 #include "SHMDecisionValidator.h"
 #include "SHMJsonIntent.h"
 #include "SHMDecisionLogFormat.h"
+#include "SHMDirectorWireFormat.h"
 #include "Framework/SHMGameplayTags.h"
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
@@ -484,31 +485,12 @@ void USHMDirectorCore::RecordLogEntry(const FDirectorContext& Context, const FDi
 	TSharedPtr<FJsonObject> Floor = MakeShared<FJsonObject>();
 	Floor->SetNumberField(Key_FloorIndex, Context.FloorIndex);
 
-	// --- 画像 ---
-	TSharedPtr<FJsonObject> Profile = MakeShared<FJsonObject>();
-	Profile->SetNumberField(TEXT("buildConcentration"), Context.Profile.BuildConcentration);
-	Profile->SetNumberField(TEXT("combatEfficiency"),   Context.Profile.CombatEfficiency);
-	Profile->SetNumberField(TEXT("resourceSurplus"),    Context.Profile.ResourceSurplus);
-	Profile->SetNumberField(TEXT("strategySwitch"),     Context.Profile.StrategySwitch);
-	Profile->SetNumberField(TEXT("survivalPressure"),   Context.Profile.SurvivalPressure);
-	Profile->SetNumberField(TEXT("confidence"),         Context.Profile.Confidence);
-	Profile->SetStringField(TEXT("dominantArchetype"),  Context.Profile.DominantArchetype.GetTagName().ToString());
-	Floor->SetObjectField(Key_Profile, Profile);
-
-	// --- 约束（LLM 当时能选的范围）---
-	TSharedPtr<FJsonObject> CtxObj = MakeShared<FJsonObject>();
-	CtxObj->SetNumberField(TEXT("challengeBudget"), Context.ChallengeBudget);
-	TArray<TSharedPtr<FJsonValue>> AvailRules;
-	for (const FSHMAvailableRule& Rule : Context.AvailableRules)
-	{
-		TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
-		R->SetStringField(Key_Tag,   Rule.RuleTag.GetTagName().ToString());
-		R->SetStringField(Key_Level, Rule.Level);
-		R->SetNumberField(Key_Cost,  Rule.Cost);
-		AvailRules.Add(MakeShared<FJsonValueObject>(R));
-	}
-	CtxObj->SetArrayField(TEXT("availableRules"), AvailRules);
-	Floor->SetObjectField(Key_Context, CtxObj);
+	// --- 画像 / 约束 ---
+	// 序列化实现在 FSHMDirectorWire，不在这里手拼：同一个结构体的 JSON 形态
+	// 若存在两处（日志一份、上行请求一份），第三处出现时必然三份不一致。
+	// 见 SHMDirectorWireFormat.h 的说明。
+	Floor->SetObjectField(Key_Profile, FSHMDirectorWire::ProfileToJson(Context.Profile));
+	Floor->SetObjectField(Key_Context, FSHMDirectorWire::LogContextToJson(Context));
 
 	// --- 护栏前的原始意图 ★ 本日志最值钱的字段 ---
 	// 「Provider 想干什么」vs「最终允许它干什么」并排，是本项目最有说服力的一屏数据。
