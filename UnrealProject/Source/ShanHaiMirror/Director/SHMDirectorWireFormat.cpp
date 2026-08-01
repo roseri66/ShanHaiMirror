@@ -33,9 +33,9 @@ TSharedPtr<FJsonObject> FSHMDirectorWire::ProfileToJson(const FPlayerProfile& Pr
 	J->SetNumberField(Key_Confidence,         Profile.Confidence);
 	J->SetStringField(Key_DominantArchetype,  WireTagToString(Profile.DominantArchetype));
 
-	// PrimaryBuildTags 刻意不进契约：它是 ProfileAnalyzer 的中间产物，
-	// 决策不消费它（本地 Provider 与 prompt 都只看 DominantArchetype）。
-	// 进契约就等于承诺维护它，而它现在没有消费方。
+	// 这里刻意只有七个字段——它们是**日志与请求共有的核心**。
+	// PrimaryBuildTags 只进上行请求（prompt 要用），由 BuildIntentRequest 单独补，
+	// 不进决策日志（保持与重构前逐字节一致）。见头文件里 Key_PrimaryBuildTags 的说明。
 	return J;
 }
 
@@ -48,9 +48,9 @@ TSharedPtr<FJsonObject> FSHMDirectorWire::AvailableRuleToJson(const FSHMAvailabl
 	J->SetStringField(SHMLogFormat::Key_Level, Rule.Level);
 	J->SetNumberField(SHMLogFormat::Key_Cost,  Rule.Cost);
 
-	// ConflictsWith 不进契约：互斥判定由**客户端** Conflict 护栏做（D-23 明确否决
-	// 把护栏搬到服务端）。服务端拿到它也不该用它做拒绝，给了反而是误导。
-	// prompt 里需要的互斥信息由服务端从自己的规则配置取。
+	// 这里刻意只有三个字段——它们是**日志与请求共有的核心**。
+	// ConflictsWith 只进上行请求（prompt 要注入互斥信息），
+	// 由 BuildIntentRequest 单独补，不进决策日志（保持与重构前逐字节一致）。
 	return J;
 }
 
@@ -68,7 +68,19 @@ TSharedPtr<FJsonObject> FSHMDirectorWire::BuildIntentRequest(const FDirectorCont
 	// FDirectorContext 的七个字段，一个不少 ——
 	// 少 availableArchetypes 或 decisionHistory，服务端只能瞎选，
 	// 选完必被客户端 Fairness 护栏拦下。
-	J->SetObjectField(Key_Profile, ProfileToJson(Context.Profile));
+	TSharedPtr<FJsonObject> ProfileObj = ProfileToJson(Context.Profile);
+
+	// 请求体的画像比日志多这一项：prompt 的「主力打法」一行读它。
+	// 不发就少一行 prompt，服务端产出的决策会与直连模式不一致。
+	TArray<TSharedPtr<FJsonValue>> BuildTags;
+	for (const FGameplayTag& Tag : Context.Profile.PrimaryBuildTags)
+	{
+		if (!Tag.IsValid()) { continue; }
+		BuildTags.Add(MakeShared<FJsonValueString>(WireTagToString(Tag)));
+	}
+	ProfileObj->SetArrayField(Key_PrimaryBuildTags, BuildTags);
+
+	J->SetObjectField(Key_Profile, ProfileObj);
 	J->SetNumberField(Key_FloorIndex, Context.FloorIndex);
 	J->SetNumberField(Key_TotalFloors, Context.TotalFloors);
 	J->SetNumberField(Key_ChallengeBudget, Context.ChallengeBudget);
@@ -76,7 +88,21 @@ TSharedPtr<FJsonObject> FSHMDirectorWire::BuildIntentRequest(const FDirectorCont
 	TArray<TSharedPtr<FJsonValue>> Rules;
 	for (const FSHMAvailableRule& Rule : Context.AvailableRules)
 	{
-		Rules.Add(MakeShared<FJsonValueObject>(AvailableRuleToJson(Rule)));
+		TSharedPtr<FJsonObject> RuleObj = AvailableRuleToJson(Rule);
+
+		// 请求体的规则比日志多这一项：prompt 必须注入互斥信息。
+		// 2026-07-28 实测——不给它 LLM 就盲选，DeepSeek 同时挑了
+		// 「弹药↓ + 远程伤害↓」，对远程玩家无解，被 Conflict 护栏拒并降级。
+		// 这是"减少无谓降级"，不是"让服务端做校验"（判定仍在客户端护栏）。
+		TArray<TSharedPtr<FJsonValue>> Conflicts;
+		for (const FGameplayTag& Tag : Rule.ConflictsWith)
+		{
+			if (!Tag.IsValid()) { continue; }
+			Conflicts.Add(MakeShared<FJsonValueString>(WireTagToString(Tag)));
+		}
+		RuleObj->SetArrayField(Key_ConflictsWith, Conflicts);
+
+		Rules.Add(MakeShared<FJsonValueObject>(RuleObj));
 	}
 	J->SetArrayField(Key_AvailableRules, Rules);
 

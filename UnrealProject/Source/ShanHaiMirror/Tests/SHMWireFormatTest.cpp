@@ -38,6 +38,8 @@ namespace
 		P.SurvivalPressure   = 22.f;
 		P.Confidence         = 0.9f;
 		P.DominantArchetype  = SHMTags::Archetype_Ranger.GetTag();
+		// 非空：prompt 的「主力打法」一行读它，空数组测不出字段有没有真的写进去
+		P.PrimaryBuildTags   = { SHMTags::Build_Ranged.GetTag() };
 		return P;
 	}
 
@@ -53,6 +55,9 @@ namespace
 		Ammo.RuleTag = SHMTags::Rule_Ammo.GetTag();
 		Ammo.Level   = TEXT("medium");
 		Ammo.Cost    = 20;
+		// 非空互斥：prompt 要注入它，空容器测不出字段有没有真的写进去。
+		// 这一对（弹药↓ / 远程伤害↓）正是实测撞出 Conflict 拦截的那一对。
+		Ammo.ConflictsWith.AddTag(SHMTags::Rule_RangedDamage.GetTag());
 		C.AvailableRules.Add(Ammo);
 
 		C.AvailableArchetypes.Add(SHMTags::Enemy_Grunt.GetTag());
@@ -123,7 +128,11 @@ bool FWireLogContextShapeTest::RunTest(const FString&)
 	{
 		TestEqual(TEXT("候选规则数量"), Rules->Num(), 1);
 		TSharedPtr<FJsonObject> R = (*Rules)[0]->AsObject();
-		TestEqual(TEXT("规则元素应为 tag/level/cost 三字段"), R->Values.Num(), 3);
+		// 日志里仍是三字段——conflictsWith 只进上行请求，不进日志，
+		// 这样日志格式与重构前逐字节一致，不必动 schemaVersion 与前端 TS 镜像
+		TestEqual(TEXT("日志的规则元素应为 tag/level/cost 三字段"), R->Values.Num(), 3);
+		TestFalse(TEXT("日志不该带 conflictsWith（那是上行请求专有）"),
+			R->HasField(TEXT("conflictsWith")));
 		TestEqual(TEXT("tag 应写完整 Tag 名"),
 			R->GetStringField(TEXT("tag")), FString(TEXT("Rule.Ammo")));
 		TestEqual(TEXT("level"), R->GetStringField(TEXT("level")), FString(TEXT("medium")));
@@ -163,11 +172,15 @@ bool FWireRequestCompleteTest::RunTest(const FString&)
 	TestTrue(TEXT("⑥ availableArchetypes"), J->HasField(TEXT("availableArchetypes")));
 	TestTrue(TEXT("⑦ decisionHistory"),     J->HasField(TEXT("decisionHistory")));
 
-	// 画像必须是完整的七维，不能只带 dominantArchetype 了事
+	// 画像必须是完整的七维，不能只带 dominantArchetype 了事。
+	// 请求里比日志多一个 primaryBuildTags —— prompt 的「主力打法」一行要用它，
+	// 不发服务端就少一行 prompt，产出会与直连模式不一致。
 	TSharedPtr<FJsonObject> P = J->GetObjectField(TEXT("profile"));
 	if (P.IsValid())
 	{
-		TestEqual(TEXT("请求里的画像块与日志同形（七字段）"), P->Values.Num(), 7);
+		TestEqual(TEXT("请求里的画像 = 共用七维 + primaryBuildTags"), P->Values.Num(), 8);
+		TestTrue(TEXT("必须带 primaryBuildTags（prompt 要用）"),
+			P->HasField(TEXT("primaryBuildTags")));
 	}
 
 	const TArray<TSharedPtr<FJsonValue>>* Archs = nullptr;
@@ -177,6 +190,25 @@ bool FWireRequestCompleteTest::RunTest(const FString&)
 		TestEqual(TEXT("候选原型数量"), Archs->Num(), 2);
 		TestEqual(TEXT("原型应写完整 Tag 名"),
 			(*Archs)[0]->AsString(), FString(TEXT("Enemy.Grunt")));
+	}
+
+	// 请求里的规则必须带 conflictsWith —— prompt 要注入它。
+	// 不给，LLM 只能盲选：实测 DeepSeek 同时挑了「弹药↓ + 远程伤害↓」，
+	// 对远程玩家无解，被 Conflict 护栏拒并白白降级一次。
+	const TArray<TSharedPtr<FJsonValue>>* ReqRules = nullptr;
+	if (TestTrue(TEXT("availableRules 应是数组"),
+		J->TryGetArrayField(TEXT("availableRules"), ReqRules)))
+	{
+		TSharedPtr<FJsonObject> R = (*ReqRules)[0]->AsObject();
+		TestEqual(TEXT("请求的规则元素 = 共用三字段 + conflictsWith"), R->Values.Num(), 4);
+		const TArray<TSharedPtr<FJsonValue>>* Conflicts = nullptr;
+		if (TestTrue(TEXT("conflictsWith 应是数组"),
+			R->TryGetArrayField(TEXT("conflictsWith"), Conflicts)))
+		{
+			TestEqual(TEXT("互斥项数量"), Conflicts->Num(), 1);
+			TestEqual(TEXT("互斥项应写完整 Tag 名"),
+				(*Conflicts)[0]->AsString(), FString(TEXT("Rule.RangedDamage")));
+		}
 	}
 	return true;
 }
@@ -246,6 +278,8 @@ bool FWireNoCppTypeLeakTest::RunTest(const FString&)
 	// 反向确认：该有的完整 Tag 名确实在
 	TestTrue(TEXT("应包含完整 Tag 名 Rule.Ammo"), Body.Contains(TEXT("Rule.Ammo")));
 	TestTrue(TEXT("应包含完整 Tag 名 Archetype.Ranger"), Body.Contains(TEXT("Archetype.Ranger")));
+	TestTrue(TEXT("应包含主力打法标签 Build.Ranged（prompt 要用）"),
+		Body.Contains(TEXT("Build.Ranged")));
 
 	return true;
 }
@@ -275,12 +309,16 @@ bool FWireProfileSingleSourceTest::RunTest(const FString&)
 
 	// ⚠️ 只比"两边字段数相同"是不够的：两边都空时 0 == 0 也成立，
 	// 桩实现能骗过这条断言。先钉死字段数不为空，这条测试才有牙。
-	TestEqual(TEXT("画像应有七个字段（空对象不算通过）"), Direct->Values.Num(), 7);
-	TestEqual(TEXT("两处画像字段数必须相同"), Direct->Values.Num(), InReq->Values.Num());
+	TestEqual(TEXT("共用画像应有七个字段（空对象不算通过）"), Direct->Values.Num(), 7);
+
+	// 关系是**包含**而非相等：请求体额外带 primaryBuildTags（prompt 要用），
+	// 日志不带（保持与重构前逐字节一致）。两份契约允许有各自的字段，
+	// 但**共用的那七维必须一字不差** —— 这才是"单一真源"要守的东西。
 	for (const auto& Pair : Direct->Values)
 	{
-		TestTrue(FString::Printf(TEXT("请求体画像应有字段 %s"), *Pair.Key),
+		TestTrue(FString::Printf(TEXT("请求体画像应含共用字段 %s"), *Pair.Key),
 			InReq->HasField(Pair.Key));
 	}
+	TestTrue(TEXT("请求体画像不得少于共用七维"), InReq->Values.Num() >= Direct->Values.Num());
 	return true;
 }

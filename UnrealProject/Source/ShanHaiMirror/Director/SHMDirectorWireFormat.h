@@ -74,6 +74,31 @@ namespace SHMWireFormat
 	inline const TCHAR* Key_Confidence         = TEXT("confidence");
 	inline const TCHAR* Key_DominantArchetype  = TEXT("dominantArchetype");
 
+	// ⚠️ **只进上行请求，不进决策日志**，故不在上面那组共用常量里。
+	//
+	// prompt 的「主力打法」一行读它（SHMPromptBuilder.cpp），LocalProvider 也用它
+	// 判断远程/近战（SHMLocalProvider.cpp:65-66）—— 它有真实消费方。
+	// prompt 搬到服务端后，不发这个字段，服务端就少一行 prompt，
+	// 「原样搬迁」不成立。
+	//
+	// 不加进决策日志是为了保持日志格式与重构前逐字节一致：
+	// 重构前的 RecordLogEntry 就没写它，现在补上等于改了日志格式，
+	// 得动 schemaVersion 并同步改前端 TS 镜像 —— 而日志里没有它也不影响回放，
+	// 那一屏不渲染主力打法。**两份契约本就允许有各自的字段，这是设计如此。**
+	inline const TCHAR* Key_PrimaryBuildTags   = TEXT("primaryBuildTags");
+
+	// ⚠️ 同样**只进上行请求，不进决策日志**。
+	//
+	// prompt 必须注入互斥信息，这是 2026-07-28 实测倒逼出的修正：
+	// 不给它 LLM 只能盲选，DeepSeek 实测同时挑了「弹药↓ + 远程伤害↓」——
+	// 对远程玩家是无解组合，被 Conflict 护栏拒、白白降级一次。
+	// **候选集要给全，才叫「只给安全选项」。**
+	//
+	// 注意这不等于把互斥**判定**交给服务端：判定仍在客户端 Conflict 护栏
+	// （D-23 的核心否决）。发过去只是让 LLM 别去选注定被拒的组合，
+	// 是"减少无谓降级"，不是"服务端做校验"。两者区别要分清。
+	inline const TCHAR* Key_ConflictsWith      = TEXT("conflictsWith");
+
 	// --- 历史条目 ---
 	// ⚠️ 只有这两个字段，是因为 FDirectorHistoryEntry 只有这两个字段。
 	//   设计文档 §5.1 的示例里还画了 challengeLevel 与 playerAdapted，
