@@ -2,6 +2,7 @@ package com.shanhai.director;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 /**
  * 山海镜决策网关（DECISIONS D-23）。
@@ -21,6 +22,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * 单机游戏里客户端本来就是权威，为一个不成立的信任边界付双写代价是纯亏。
  */
 @SpringBootApplication
+@ConfigurationPropertiesScan
 public class DirectorServiceApplication {
 
     public static void main(String[] args) {

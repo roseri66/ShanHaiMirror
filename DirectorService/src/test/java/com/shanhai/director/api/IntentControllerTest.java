@@ -25,7 +25,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * 路径写错、响应包了信封、配比和不为 1，都会表现为"每层降级本地、玩家零感知"，
  * 被降级链悄悄吞掉，不看日志根本发现不了。
  */
-@SpringBootTest
+/*
+ * ⚠️ 这一组测的是 **stub 路径**（未配置 key 时的行为）。
+ *
+ * properties 里把 key 显式置空，是为了让本地 application-local.yml 里的真实
+ * key 影响不到测试。不这么做的话测试会真的去打 LLM——2026-08-01 第一次跑
+ * 就是这样，单条 6.7 秒，而且断言对象悄悄从"我的代码"变成了"模型这次说了什么"。
+ *
+ * LLM 路径的测试见 IntentControllerLlmTest，那里用 @MockBean 造确定性响应。
+ */
+@SpringBootTest(properties = "shm.llm.api-key=")
 @AutoConfigureMockMvc
 class IntentControllerTest {
 

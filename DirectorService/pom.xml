@@ -45,6 +45,15 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
+        <!-- WebClient 在 webflux 里。加它不等于把服务改成响应式——
+             web(Tomcat) 仍是服务端模型，webflux 这里只作为 HTTP 客户端用。
+             选 WebClient 而非 RestTemplate 的理由：上游是 4–5 秒的慢调用，
+             线程不该阻塞在等待上（RestTemplate 已进入维护模式）。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

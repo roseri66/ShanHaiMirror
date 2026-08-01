@@ -11,7 +11,20 @@ spring:
     group:
       default: local
   config:
-    import: "optional:classpath:application-local.yml"
+    import:
+      # prompt 真源。单独成文件是为了让"改 prompt"不需要碰 application.yml，
+      # 也让它在仓库里是一个能直接读的文本文件。**不是 optional**——
+      # 缺了它服务起不来，这是对的：没有 prompt 的决策网关没有意义。
+      - "classpath:prompt.yaml"
+      # 本地配置（放 key，已 gitignore）。**是 optional**——
+      # 他人 clone 后没有这个文件也能起，只是走 stub 路径。
+      - "optional:classpath:application-local.yml"
+
+  # web 用 Tomcat（servlet），webflux 只作为 HTTP 客户端库存在。
+  # 不声明的话两个 starter 同时在 classpath 上会让 Spring 选 reactive，
+  # 而我们的 Controller 是 servlet 风格的。
+  main:
+    web-application-type: servlet
 
   # Jackson：客户端多发字段不该让请求 400。
   # 上行契约会演进，而客户端与服务端不可能同时上线。

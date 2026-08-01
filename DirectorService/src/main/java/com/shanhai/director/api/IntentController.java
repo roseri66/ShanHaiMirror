@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.shanhai.director.llm.LlmClient;
+
 /**
  * 决策端点。
  *
@@ -27,6 +29,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class IntentController {
 
     private static final Logger log = LoggerFactory.getLogger(IntentController.class);
+
+    private final LlmClient llmClient;
+
+    public IntentController(LlmClient llmClient) {
+        this.llmClient = llmClient;
+    }
 
     /** 上行路径。<b>必须与 UE 侧 FSHMRemoteProvider::IntentPath 一致</b>，那边有测试钉着。 */
     public static final String INTENT_PATH = "/v1/director/intent";
@@ -59,15 +67,37 @@ public class IntentController {
                 request.availableArchetypes() == null ? 0 : request.availableArchetypes().size(),
                 request.decisionHistory() == null ? 0 : request.decisionHistory().size());
 
-        final DirectorIntent intent = buildStubIntent();
-        final long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L;
+        // --- 真实 LLM 路径 ---
+        if (llmClient.isAvailable()) {
+            DirectorIntent fromLlm = llmClient.requestIntent(request).block();
+            if (fromLlm != null) {
+                return respond(fromLlm, "Llm", startedAt);
+            }
+            // 上游失败：**返回 5xx 而不是悄悄回落 stub**。
+            // 回落的话客户端会拿到一个"成功"的响应，把 stub 的固定配比
+            // 当成真实决策记进日志——那是往证据链里掺假。
+            // 返回 5xx 客户端就降级本地，玩家零感知，日志如实记降级。
+            log.warn("上游 LLM 交不出结果，返回 503 让客户端降级本地");
+            return ResponseEntity.status(503).build();
+        }
 
+        // --- 未配置 key：stub 路径（M0 行为，保留供无 key 时演示）---
+        return respond(buildStubIntent(), "ServerLocal", startedAt);
+    }
+
+    /**
+     * 统一出口。
+     *
+     * <p>{@code source} 必须如实反映**这次实际走了哪条路径**：
+     * Llm = 真调了上游；ServerLocal = 服务端自己产的固定 Intent。
+     * 客户端会把它记进决策日志的 trace，**谎报来源等于往证据链里掺假**。
+     * 这与客户端"UI 显示实际发生了什么、不是配置成了什么"（踩坑 #20）是同一条线。
+     */
+    private ResponseEntity<DirectorIntent> respond(DirectorIntent intent, String source, long startedAt) {
+        final long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L;
         return ResponseEntity.ok()
-                // ServerLocal = 服务端自己产的，不是 LLM 产的。
-                // **M1 接上真实 LLM 之前，这里绝不能报 Llm** ——
-                // 客户端会把它记进决策日志的 trace，谎报来源等于往证据链里掺假。
-                .header("X-SHM-Source", "ServerLocal")
-                .header("X-SHM-Cache", "miss")
+                .header("X-SHM-Source", source)
+                .header("X-SHM-Cache", "miss")   // 缓存是 M3 的事，现在恒为 miss
                 .header("X-SHM-Elapsed-Ms", String.valueOf(elapsedMs))
                 .body(intent);
     }

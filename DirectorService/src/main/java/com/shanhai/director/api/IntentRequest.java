@@ -31,8 +31,18 @@ public record IntentRequest(
         List<String> availableArchetypes,
         List<HistoryEntry> decisionHistory
 ) {
-    /** 候选规则：客户端已经把 Cost 拷进来了，服务端不需要再查表。 */
-    public record AvailableRule(String tag, String level, Integer cost) {
+    /**
+     * 候选规则：客户端已经把 Cost 与互斥信息拷进来了，服务端不需要再查表。
+     *
+     * <p>{@code conflictsWith} 必须注入进 prompt。2026-07-28 实测——不给它
+     * LLM 只能盲选，DeepSeek 同时挑了「弹药↓ + 远程伤害↓」，对远程玩家是
+     * 无解组合，被客户端 Conflict 护栏拒并白白降级一次。
+     * <b>候选集要给全，才叫"只给安全选项"。</b>
+     *
+     * <p>注意这不等于让服务端做互斥判定——判定仍在客户端护栏（D-23 的核心否决）。
+     * 发过来只是让 LLM 别去选注定被拒的组合。
+     */
+    public record AvailableRule(String tag, String level, Integer cost, List<String> conflictsWith) {
     }
 
     /** 往层决策：Fairness 只关心"这条规则用过没有"，故只有 tag 列表。 */
