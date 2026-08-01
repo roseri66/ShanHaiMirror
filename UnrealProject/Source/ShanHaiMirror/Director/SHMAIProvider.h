@@ -18,9 +18,10 @@ DECLARE_DELEGATE_TwoParams(FSHMOnIntentReady, const FDirectorIntent& /*Intent*/,
 // 调用方一律按异步写，不需要知道背后是哪种。
 // 延迟被层间 2.5 秒过场天然掩盖（TDD §1.2 早就设想的结构，这里落地）。
 //
-// 三个实现（DECISIONS D-16）：
+// 四个实现（DECISIONS D-16 定了前三个，D-23 加了 Remote）：
 //   FSHMLocalProvider   规则表决策 —— 永远可用，降级终点
-//   FSHMLlmProvider     OpenAI 兼容 HTTP —— 可失败
+//   FSHMRemoteProvider  决策网关后端 HTTP —— 可失败（D-23）
+//   FSHMLlmProvider     OpenAI 兼容 HTTP 直连 —— 可失败，默认不编译（见其头文件）
 //   FSHMReplayProvider  预录 JSON 脚本 —— 确定性回放，录屏/集成测试
 // ============================================================================
 class SHANHAIMIRROR_API ISHMAIProvider
@@ -32,4 +33,15 @@ public:
 
 	// 日志/溯源用标识（进 FDirectorTrace.ProviderId）
 	virtual FString GetProviderName() const = 0;
+
+	// 一局开始时通知 Provider（D-23）。
+	//
+	// **默认空实现**，所以现有三个 Provider 一行都不用改。
+	// 只有 Remote 需要它：上行请求体要带 runId，而 runId 是"一局的标识"，
+	// 不是"一次决策的输入"，故不在 FDirectorContext 里 —— 把它塞进 Context
+	// 会让那个结构体承担它不该承担的语义，也会污染四个已经稳定的护栏测试。
+	//
+	// 用 DirectorCore 的 RunId 而非自己生成：请求体里的 runId 必须与决策日志
+	// 的 runId 对得上，否则 M5 的回流聚合无法把两边关联起来。
+	virtual void OnRunStarted(const FString& InRunId) {}
 };

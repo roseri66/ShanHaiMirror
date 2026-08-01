@@ -1,5 +1,6 @@
 #include "SHMDirectorCore.h"
 #include "SHMLocalProvider.h"
+#include "SHMRemoteProvider.h"
 #include "SHMLlmProvider.h"
 #include "SHMReplayProvider.h"
 #include "SHMRuleResolver.h"
@@ -86,8 +87,13 @@ void USHMDirectorCore::Initialize(FSubsystemCollectionBase& Collection)
 	LoadRuleTableAndFallback();
 
 	// --- Provider 选择 ---
-	// 优先级：回放（显式开启，录屏/测试用）→ LLM（key 就位）→ 本地
+	// 优先级：回放（显式开启，录屏/测试用）→ Remote（决策网关后端，D-23）
+	//        → LLM 直连（key 就位）→ 本地
 	// 选谁都不影响下游：DirectorCore 只认 ISHMAIProvider，失败一律降级本地。
+	//
+	// ⚠️ 变的**只有这一段构造代码**。决策编排（DecideForFloor / FinishDecision
+	// 的三级降级、四道护栏、查表出数值）一行未动 —— 加了一整套后端服务而
+	// 编排层零改动，这正是当初保留 ISHMAIProvider 抽象而不直接写 HTTP 的证据。
 	const FString ReplayScript = FPlatformMisc::GetEnvironmentVariable(TEXT("SHM_REPLAY_SCRIPT"));
 	if (!ReplayScript.IsEmpty())
 	{
@@ -99,6 +105,15 @@ void USHMDirectorCore::Initialize(FSubsystemCollectionBase& Collection)
 		else
 		{
 			UE_LOG(LogSHMDirectorCore, Warning, TEXT("回放脚本不可用，改用其它 Provider"));
+		}
+	}
+
+	if (!Provider)
+	{
+		TUniquePtr<FSHMRemoteProvider> Remote = MakeUnique<FSHMRemoteProvider>();
+		if (Remote->IsAvailable())
+		{
+			Provider = MoveTemp(Remote);
 		}
 	}
 
@@ -129,6 +144,14 @@ void USHMDirectorCore::ResetRun()
 	FloorRecords.Empty();
 	RunId        = FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens);
 	RunStartedAt = FDateTime::UtcNow().ToIso8601();
+
+	// 告知 Provider 本局标识。默认空实现，只有 Remote 需要它——
+	// 上行请求体里的 runId 必须与决策日志的 runId 一致，
+	// 否则 M5 的回流聚合无法把两边关联起来。
+	if (Provider)
+	{
+		Provider->OnRunStarted(RunId);
+	}
 }
 
 FString USHMDirectorCore::GetEffectiveSourceLabel() const
