@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.2.5</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.shanhai</groupId>
+    <artifactId>director-service</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <name>DirectorService</name>
+    <description>山海镜决策网关 —— 把 LLM 调用从客户端搬到服务端（DECISIONS D-23）</description>
+
+    <properties>
+        <java.version>17</java.version>
+
+        <!-- ★ 必须显式钉 UTF-8。
+             本机 Maven 自报 platform encoding: GBK（zh_CN + Windows），
+             不钉的话源码里的中文注释、以及将来 prompt.yaml 里的中文
+             会在编译期按 GBK 解读而乱码。
+
+             这与踩坑 #19 是同一类问题的另一面：那次是 UE 的
+             SaveStringToFile 默认写 UTF-16，导出的 JSON 外部工具读不了；
+             这次是构建工具按系统区域设置解读源文件。
+             判据一样——**凡是跨工具/跨语言流动的文本，编码必须显式指定，
+             不能依赖平台默认值**。 -->
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- M0 只要能起、能返回固定 Intent。
+             WebClient / Resilience4j / Bucket4j / Redis / MySQL / Micrometer
+             都留到各自的里程碑再加 —— 一次性把依赖堆齐，
+             等于让 pom 描述一个还不存在的系统。 -->
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!-- 与 sourceEncoding 呼应，双保险 -->
+                    <encoding>UTF-8</encoding>
+                    <compilerArgs>
+                        <arg>-Xlint:all</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
