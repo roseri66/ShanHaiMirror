@@ -286,15 +286,26 @@ USTRUCT() struct FDirectorDecision
 | **选哪些规则组合、针对哪个维度** | **LLM** | 多个合法解时做有品味的选择 |
 | **白泽台词 / 决策解释** | **LLM** | 规则表写不出的自然语言 |
 
-### 4.5 三个 Provider（D-16）
+### 4.5 Provider 实现（D-16 定三个，D-23 改为四个）
 
-一个抽象吃掉三个不同需求，这是保留它的理由：
+一个抽象吃掉多个不同需求，这是保留它的理由：
 
 | 实现 | 用途 | 为什么必需 |
 |---|---|---|
 | `FLocalProvider` | 规则表决策 | 降级终点。**它单独就是一个完整可玩的游戏**——LLM 是可拔插增强层，不是依赖 |
-| `FLlmProvider` | OpenAI 兼容 HTTP | 证明"选择与表达"确实由 LLM 承担 |
+| `FRemoteProvider` | 决策网关后端 HTTP | **生产路径**（D-23）。key 留在服务端，prompt 真源也在服务端 |
 | `FReplayProvider` | 读预录 JSON 脚本 | 录屏确定性 + 集成测试可复现。成本极低，价值极高 |
+| `FLlmProvider` | OpenAI 兼容 HTTP 直连 | **默认不编译**（`SHM_DEV_DIRECT_LLM=0`）。仅供无后端时调试 |
+
+> **D-23 修正**：`FLlmProvider` 已退出降级链。prompt 搬到服务端后它就成了
+> 第二份 prompt 真源，两份同时生效等于同一个游戏两套人格。
+> 现降级链为 **Remote → Local**（Replay 供测试）。
+> 它保留而非删除，是因为断网或后端起不来时，它是唯一不依赖 DirectorService
+> 的验证路径。**两份 prompt 允许漂移、不保证一致**——这是明说的，不是遗漏。
+>
+> 连带影响：客户端的 `Llm.*`（2 条）与 `Prompt.*`（4 条）自动化测试随之停用，
+> UE 侧从 68 降到 62。**覆盖没有丢失，是搬家了**——prompt 的测试真源
+> 现在是服务端的 `PromptBuilderTest`（7 条），比原来更细。
 
 ### 4.6 验收标准
 

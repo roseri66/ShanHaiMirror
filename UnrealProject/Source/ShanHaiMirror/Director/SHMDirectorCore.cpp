@@ -1,7 +1,7 @@
 #include "SHMDirectorCore.h"
 #include "SHMLocalProvider.h"
 #include "SHMRemoteProvider.h"
-#include "SHMLlmProvider.h"
+#include "SHMLlmProvider.h"   // 内容被 SHM_DEV_DIRECT_LLM 守卫，默认为空
 #include "SHMReplayProvider.h"
 #include "SHMRuleResolver.h"
 #include "SHMDecisionValidator.h"
@@ -117,6 +117,9 @@ void USHMDirectorCore::Initialize(FSubsystemCollectionBase& Collection)
 		}
 	}
 
+#if SHM_DEV_DIRECT_LLM
+	// 直连 LLM —— **默认不编译**（D-23）。prompt 真源已在服务端，
+	// 客户端再拼一份就是同一个游戏两套人格。仅在无后端可用时打开调试。
 	if (!Provider)
 	{
 		TUniquePtr<FSHMLlmProvider> Llm = MakeUnique<FSHMLlmProvider>();
@@ -125,6 +128,7 @@ void USHMDirectorCore::Initialize(FSubsystemCollectionBase& Collection)
 			Provider = MoveTemp(Llm);
 		}
 	}
+#endif
 
 	if (!Provider)
 	{

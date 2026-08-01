@@ -4,6 +4,25 @@
 #include "SHMAIProvider.h"
 #include "Interfaces/IHttpRequest.h"
 
+#if SHM_DEV_DIRECT_LLM
+
+// ============================================================================
+// ⚠️ 直连模式，仅供无后端时调试。**默认不编译**（D-23 / M1）
+//
+// 生产路径的 prompt 真源在 `DirectorService/src/main/resources/prompt.yaml`，
+// 决策由 FSHMRemoteProvider 经服务端取得。本类与那份 prompt
+// **允许漂移，不保证一致** —— 明确承认漂移，比假装同步诚实。
+//
+// 打开方式：ShanHaiMirror.Build.cs 里把 SHM_DEV_DIRECT_LLM 改成 1 并重新编译。
+// 打开后降级链变成 Remote → Llm → Local。
+//
+// 为什么默认关掉：prompt 一旦两处都生效，就是同一个游戏两套人格，
+// 且会随各自的修改越漂越远。D-23 把 prompt 单一真源列为不可欠的债。
+//
+// **本类保留而非删除的理由**：断网、后端起不来、或想单独验证 LLM 行为时，
+// 它是唯一不依赖 DirectorService 的验证路径。删了就得从头再写一遍。
+// ============================================================================
+
 // ============================================================================
 // LLM Provider —— OpenAI 兼容 HTTP 端点
 //
@@ -66,3 +85,5 @@ private:
 	// 整局体验被拖慢却毫无收益。
 	bool bAuthFailed = false;
 };
+
+#endif // SHM_DEV_DIRECT_LLM

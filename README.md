@@ -47,7 +47,7 @@ USTRUCT() struct FDirectorDecision
 ```
 
 **② LLM 这一步可以整体失败。**
-三个 Provider 实现同一接口，失败逐级降级到本地规则表，日志留痕。**本地 Provider 单独就是一个完整可玩的游戏**——LLM 是可拔插的增强层，不是依赖。拔掉网线，游戏照常运转。
+多个 Provider 实现同一接口，失败逐级降级到本地规则表，日志留痕。**本地 Provider 单独就是一个完整可玩的游戏**——LLM 是可拔插的增强层，不是依赖。拔掉网线、或后端服务停掉，游戏都照常运转。
 
 **③ 画像分析是纯函数。**
 `ProfileAnalyzer` 无副作用、无引擎依赖、不碰随机数。相同输入必定得到相同画像。这是它能被单测的前提，也是断网可跑的前提。
@@ -75,8 +75,8 @@ USTRUCT() struct FDirectorDecision
              └ History[]                     上层决策 + 玩家是否适应
    ▼
 ④ CHOOSE     IAIProvider::RequestIntentAsync(Context, OnDone) ──> FDirectorIntent
-             ├ FLocalProvider   规则表        （永远可用·基线）
-             ├ FLlmProvider     HTTP + JSON   （可失败）
+             ├ FRemoteProvider  HTTP → 决策网关（可失败·生产路径）
+             ├ FLocalProvider   规则表        （永远可用·降级终点）
              └ FReplayProvider  预录脚本      （确定性·录屏与集成测试）
    ▼
 ⑤ VALIDATE   四道护栏                                                 【可单测】
@@ -160,7 +160,7 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | 武器切换 + 弓（画像分化的输入源） | ✅ 已完成 · 攻击按 AttackPattern 分发 |
 | 敌人四原型 + 遭遇系统消费敌人权重 | ✅ 已完成 · 数据驱动（CSV）· 刷怪点导航网格投影 |
 | **闭环端到端可玩** | ✅ 打一局 3 层：真实行为 → 画像 → 决策 → 下层刷怪与规则生效，肉眼可见被针对 |
-| `IAIProvider` 三实现（链路 ④） | ✅ Local（降级终点）· **Llm**（OpenAI 兼容，异步）· **Replay**（确定性回放） |
+| `IAIProvider` 四实现（链路 ④） | ✅ **Remote**（决策网关，生产路径）· Local（降级终点）· **Replay**（确定性回放）· Llm（直连，默认不编译） |
 | **三级降级链路** | ✅ Provider 失败 → 护栏拒绝 → 安全兜底，每级留日志；**无 key/断网完整可玩** |
 | 决策日志（含护栏前 RawIntent + 溯源） | ✅ 一局结束自动导出 JSON（`schemaVersion` 契约，回放/可视化共用） |
 | **导演报告卡（链路 ⑦）** | ✅ 层间弹出「我看到的 → 本层调整 → 白泽台词 → 决策溯源」，读完才开打 |
@@ -252,19 +252,37 @@ UnrealProject/ShanHaiMirror.uproject     右键 Generate Visual Studio project f
 UnrealProject/ShanHaiMirror.sln          Development Editor | Win64
 ```
 
-LLM Provider 走**任一 OpenAI 兼容端点**，全部通过环境变量配置（**未配置时自动使用本地
-Provider，游戏完整可玩**）：
+### LLM 配置：key 在服务端，不在客户端
+
+**客户端不持有任何凭据。** LLM 调用由决策网关 `DirectorService/` 承担（D-23），
+客户端只知道网关地址：
 
 ```powershell
-setx SHM_LLM_API_KEY  "sk-..."                      # 必填，缺省则用本地 Provider
-setx SHM_LLM_BASE_URL "https://api.deepseek.com/v1" # 选填，默认 OpenAI
-setx SHM_LLM_MODEL    "deepseek-chat"               # 选填
-setx SHM_LLM_TIMEOUT  "10"                          # 选填，秒
+setx SHM_DIRECTOR_URL "http://localhost:8080"   # 选填，默认就是它
+setx SHM_DIRECTOR_TIMEOUT "12"                  # 选填，秒
 ```
 
-设置后需**重启编辑器**（环境变量在进程启动时读取）。key 只存在于内存，
-不入库、不进日志。删除用 `[Environment]::SetEnvironmentVariable("SHM_LLM_API_KEY", $null, "User")`
-——`setx` 无法置空（踩坑 #20）。
+key 配在服务端的 `DirectorService/src/main/resources/application-local.yml`
+（**已 gitignore**），或走环境变量注入：
+
+```yaml
+shm:
+  llm:
+    api-key: sk-...
+```
+
+```powershell
+cd DirectorService
+mvn spring-boot:run
+```
+
+**后端起不起得来都不影响游戏可玩性**：网关不可达、超时、返回 5xx / 429，
+客户端一律降级本地 Provider，日志留痕，玩家零感知。
+未配 key 时服务端走占位实现，响应头 `X-SHM-Source: ServerLocal` 如实标注。
+
+> 客户端仍保留一个直连 LLM 的 `FSHMLlmProvider`，但**默认不编译**
+> （`ShanHaiMirror.Build.cs` 里 `SHM_DEV_DIRECT_LLM=0`），仅供无后端时调试。
+> 生产路径的 prompt 真源是服务端的 `prompt.yaml`，两者允许漂移、不保证一致。
 
 ---
 
