@@ -46,6 +46,7 @@ public:
 	virtual void RequestIntentAsync(const FDirectorContext& Context, FSHMOnIntentReady OnDone) override;
 	virtual FString GetProviderName() const override { return TEXT("Remote"); }
 	virtual void OnRunStarted(const FString& InRunId) override { RunId = InRunId; }
+	virtual FString GetLastFailureReason() const override { return LastFailureReason; }
 
 	// 是否可用。URL 被显式关掉时返回 false，DirectorCore 直接跳过本 Provider。
 	//
@@ -82,7 +83,26 @@ private:
 	// **以后在这个项目里加任何异步回调，都要先想生命周期。**
 	TSharedPtr<uint8> LifetimeToken = MakeShared<uint8>(0);
 
+	// 启动时探测一次可达性，**只为了打一条明确的提示日志**。
+	//
+	// ⚠️ 它**不参与 IsAvailable() 判断**，这与头文件上方那条
+	// 「刻意不探测连通性」不矛盾：那条说的是"可用性判断不该依赖探测"
+	// （探测要同步往返会卡住游戏线程，且启动时活着不代表决策时还活着）。
+	// 这里是异步的、纯提示性的，失败也不改变任何行为。
+	//
+	// 为什么值得加：2026-08-05 用户反复报"连不上服务端一直降级"，
+	// 排查一轮后发现只是**服务没启动**。日志里其实写了"后端不可达"，
+	// 但那是每层决策时才出现的 Warning，而且和"超时"长得一样。
+	// 开局就明说「网关不可达，本局全程本地」并给出启动命令，
+	// 比让人事后翻日志强得多。踩坑 #16「功能没长嘴」的同一课。
+	void ProbeReachability();
+
 	FString BaseUrl;
 	FString RunId;
 	float   TimeoutSeconds = DefaultTimeoutSeconds;
+
+	// 最近一次失败的具体原因，供报告卡角标与决策日志区分
+	// 「不可达」「超时」「被限流」「响应无法解析」。
+	// 只有一个线程写（HTTP 回调都在游戏线程派发），不需要额外同步。
+	FString LastFailureReason;
 };

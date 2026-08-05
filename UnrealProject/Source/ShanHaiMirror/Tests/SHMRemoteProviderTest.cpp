@@ -1,5 +1,6 @@
 #include "Misc/AutomationTest.h"
 #include "Director/SHMRemoteProvider.h"
+#include "Director/SHMLocalProvider.h"
 #include "Director/SHMJsonIntent.h"
 
 // ============================================================================
@@ -106,6 +107,39 @@ bool FRemoteDisabledFailsFastTest::RunTest(const FString&)
 	// 同步完成——没有 HTTP 往返，不需要 tick 消息循环
 	TestEqual(TEXT("回调必须恰好触发一次（漏了会让层间过场永远等下去）"), CallCount, 1);
 	TestFalse(TEXT("禁用时必须报失败，由 DirectorCore 降级本地"), bReportedSuccess);
+	return true;
+}
+
+// ---------------------------------------------------------------------------
+// 失败原因必须可区分
+//
+// 2026-08-05：用户反复报"连不上服务端一直降级"，排查一轮后发现只是
+// **服务没启动**。日志里写了"后端不可达"，但它和"超时"在报告卡上
+// 长得一模一样——分不清为什么降级时，第一反应都是"是不是代码坏了"。
+// 降级本身不是问题，**分不清原因才是**。
+// ---------------------------------------------------------------------------
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRemoteFailureReasonTest,
+	"SHM.Director.Remote.FailureReason_IsDistinguishable", RemoteTestFlags)
+
+bool FRemoteFailureReasonTest::RunTest(const FString&)
+{
+	FSHMRemoteProvider Disabled = RemoteMakeProvider(FString());
+
+	// 初始状态不该带上一次的残留
+	TestTrue(TEXT("初始时不应有失败原因"), Disabled.GetLastFailureReason().IsEmpty());
+
+	FSHMOnIntentReady OnDone;
+	OnDone.BindLambda([](const FDirectorIntent&, bool) {});
+	FDirectorContext Ctx;
+	Disabled.RequestIntentAsync(Ctx, OnDone);
+
+	TestEqual(TEXT("禁用时原因应为「已禁用」，而非笼统的失败"),
+		Disabled.GetLastFailureReason(), FString(TEXT("已禁用")));
+
+	// 接口默认实现返回空——现有三个 Provider 不实现它也不会出错
+	FSHMLocalProvider Local;
+	TestTrue(TEXT("未实现该方法的 Provider 应返回空，调用方回退通用措辞"),
+		Local.GetLastFailureReason().IsEmpty());
 	return true;
 }
 

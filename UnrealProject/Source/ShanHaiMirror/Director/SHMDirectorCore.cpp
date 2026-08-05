@@ -344,12 +344,19 @@ void USHMDirectorCore::DecideForFloorAsync(const FPlayerProfile& Profile, int32 
 		// --- 降级 ①：Provider 交不出结果（超时/HTTP 错/解析失败/脚本缺层）---
 		if (!bSuccess)
 		{
+			// 具体原因（不可达 / 超时 / 被限流 / 响应无法解析…）由 Provider 提供。
+			// 空则回退到通用措辞——现有 Provider 不实现它也不会出错。
+			const FString Detail = Provider.IsValid() ? Provider->GetLastFailureReason() : FString();
+			const FString Reason = Detail.IsEmpty()
+				? FString::Printf(TEXT("%s 无可用输出"), *ProviderId)
+				: FString::Printf(TEXT("%s %s"), *ProviderId, *Detail);
+
 			UE_LOG(LogSHMDirectorCore, Warning,
-				TEXT("[%s] 未能产出决策（耗时 %.0fms）——降级本地"), *ProviderId, ElapsedMs);
+				TEXT("[%s] 未能产出决策（耗时 %.0fms，%s）——降级本地"),
+				*ProviderId, ElapsedMs, Detail.IsEmpty() ? TEXT("原因未细分") : *Detail);
 
 			const FDirectorIntent LocalIntent = LocalFallback->RequestIntent(Ctx);
-			FinishDecision(Ctx, LocalIntent, ProviderId, true,
-				FString::Printf(TEXT("%s 无可用输出"), *ProviderId), ElapsedMs, OnDecision);
+			FinishDecision(Ctx, LocalIntent, ProviderId, true, Reason, ElapsedMs, OnDecision);
 			return;
 		}
 

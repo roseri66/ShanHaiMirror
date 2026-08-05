@@ -44,6 +44,54 @@ FSHMRemoteProvider::FSHMRemoteProvider()
 
 	UE_LOG(LogSHMRemote, Log, TEXT("Remote Provider 初始化：endpoint=%s timeout=%.0fs"),
 		BaseUrl.IsEmpty() ? TEXT("（已禁用）") : *BaseUrl, TimeoutSeconds);
+
+	if (IsAvailable())
+	{
+		ProbeReachability();
+	}
+}
+
+void FSHMRemoteProvider::ProbeReachability()
+{
+	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Probe = FHttpModule::Get().CreateRequest();
+	Probe->SetURL(BaseUrl);
+	Probe->SetVerb(TEXT("GET"));
+	// 短超时：这只是开局的一次提示性探测，不该让人等。
+	// 2 秒足够判断本机服务在不在。
+	Probe->SetTimeout(2.f);
+
+	const TWeakPtr<uint8> WeakToken = LifetimeToken;
+	const FString Url = BaseUrl;
+	Probe->OnProcessRequestComplete().BindLambda(
+		[WeakToken, Url](FHttpRequestPtr, FHttpResponsePtr Resp, bool bOk)
+	{
+		if (!WeakToken.IsValid())
+		{
+			return;
+		}
+
+		// **拿到任何 HTTP 响应都算可达**——根路径返回 404 是正常的
+		// （服务端没有映射 "/"），那同样证明服务活着。
+		// 只有传输层失败才说明连不上。
+		if (bOk && Resp.IsValid())
+		{
+			UE_LOG(LogSHMRemote, Log, TEXT("决策网关可达（%s，HTTP %d），本局将使用远端决策。"),
+				*Url, Resp->GetResponseCode());
+			return;
+		}
+
+		UE_LOG(LogSHMRemote, Warning,
+			TEXT("╔══════════════════════════════════════════════════════════════╗\n")
+			TEXT("║ 决策网关不可达：%s\n")
+			TEXT("║ **本局将全程使用本地 Provider**（游戏完整可玩，但无 LLM 决策）。\n")
+			TEXT("║ 若要启用远端决策，先启动服务再开始游戏：\n")
+			TEXT("║     cd C:\\Dev\\ShanHaiMirror\\DirectorService\n")
+			TEXT("║     mvn spring-boot:run\n")
+			TEXT("╚══════════════════════════════════════════════════════════════╝"),
+			*Url);
+	});
+
+	Probe->ProcessRequest();
 }
 
 FSHMRemoteProvider::FSHMRemoteProvider(const FTestingConfig& Config)
@@ -58,9 +106,11 @@ void FSHMRemoteProvider::RequestIntentAsync(const FDirectorContext& Context, FSH
 	if (!IsAvailable())
 	{
 		UE_LOG(LogSHMRemote, Warning, TEXT("Remote Provider 已禁用，本次判失败（将降级本地）"));
+		LastFailureReason = TEXT("已禁用");
 		OnDone.ExecuteIfBound(FDirectorIntent(), false);
 		return;
 	}
+	LastFailureReason.Empty();
 
 	// 请求体走上行契约的唯一真源，不在这里手拼（见 SHMDirectorWireFormat.h）
 	const FString Body = FSHMDirectorWire::BuildIntentRequestString(Context, RunId);
@@ -77,10 +127,11 @@ void FSHMRemoteProvider::RequestIntentAsync(const FDirectorContext& Context, FSH
 	// 玩家在 HTTP 往返途中停掉 PIE 时，本对象已析构而回调仍会执行。
 	const TWeakPtr<uint8> WeakToken = LifetimeToken;
 	Request->OnProcessRequestComplete().BindLambda(
-		[WeakToken, OnDone, StartTime](FHttpRequestPtr Req, FHttpResponsePtr Resp, bool bOk)
+		[this, WeakToken, OnDone, StartTime](FHttpRequestPtr Req, FHttpResponsePtr Resp, bool bOk)
 	{
 		// Provider 已随 GameInstance 析构：一个字段都不能碰。
 		// 也不需要回调——等结果的 DirectorCore 同样已经不在了。
+		// **令牌 pin 住之后 this 才是安全的**，下面写 LastFailureReason 依赖这一点。
 		if (!WeakToken.IsValid())
 		{
 			return;
@@ -93,8 +144,16 @@ void FSHMRemoteProvider::RequestIntentAsync(const FDirectorContext& Context, FSH
 		// 以前"有网"就意味着"能到 LLM"，现在中间多了一跳。
 		if (!bOk || !Resp.IsValid())
 		{
+			// 区分"没起"与"起了但太慢"：两者的处置完全不同——
+			// 前者是去启动服务，后者是查上游或调超时。
+			// 界面上分不清的话，第一反应都会是"是不是代码坏了"。
+			const bool bLikelyTimeout = ElapsedMs >= TimeoutSeconds * 1000.f * 0.9f;
+			LastFailureReason = bLikelyTimeout ? TEXT("超时") : TEXT("不可达");
+
 			UE_LOG(LogSHMRemote, Warning,
-				TEXT("请求失败（后端不可达或超时），耗时 %.0fms —— 将降级本地"), ElapsedMs);
+				TEXT("请求失败（%s），耗时 %.0fms —— 将降级本地%s"),
+				*LastFailureReason, ElapsedMs,
+				bLikelyTimeout ? TEXT("") : TEXT("。服务没启动？先跑 mvn spring-boot:run"));
 			OnDone.ExecuteIfBound(FDirectorIntent(), false);
 			return;
 		}
@@ -109,11 +168,13 @@ void FSHMRemoteProvider::RequestIntentAsync(const FDirectorContext& Context, FSH
 			// "被限流了" 与 "后端挂了" 在事后可区分。
 			if (Code == 429)
 			{
+				LastFailureReason = TEXT("被限流");
 				UE_LOG(LogSHMRemote, Log,
 					TEXT("HTTP 429 被限流（设计内），耗时 %.0fms —— 按预期降级本地"), ElapsedMs);
 			}
 			else
 			{
+				LastFailureReason = FString::Printf(TEXT("HTTP %d"), Code);
 				UE_LOG(LogSHMRemote, Warning,
 					TEXT("HTTP %d，耗时 %.0fms —— 将降级本地"), Code, ElapsedMs);
 			}
@@ -130,6 +191,7 @@ void FSHMRemoteProvider::RequestIntentAsync(const FDirectorContext& Context, FSH
 		const FDirectorIntent Intent = FSHMJsonIntent::ParseFromJson(RespBody, bParsed);
 		if (!bParsed)
 		{
+			LastFailureReason = TEXT("响应无法解析");
 			UE_LOG(LogSHMRemote, Warning,
 				TEXT("后端返回 200 但 body 不是合法 Intent，耗时 %.0fms —— 将降级本地"), ElapsedMs);
 			OnDone.ExecuteIfBound(FDirectorIntent(), false);
