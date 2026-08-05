@@ -6,6 +6,10 @@
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 
+// 直连模式默认不编译（D-23），这组测试随之停用。
+// prompt 的测试真源已移到服务端 DirectorService 的 PromptBuilderTest。
+#if SHM_DEV_DIRECT_LLM
+
 #if WITH_DEV_AUTOMATION_TESTS
 
 // ============================================================================
@@ -141,3 +145,5 @@ bool FSHMPromptDeterministicTest::RunTest(const FString& Parameters)
 }
 
 #endif // WITH_DEV_AUTOMATION_TESTS
+
+#endif // SHM_DEV_DIRECT_LLM

@@ -127,6 +127,12 @@ DirectorCore 套护栏(预算/冲突/公平) → FDirectorDecision
 
 - **模块内/进程内**:事件总线(广播)+ 直接接口调用(查询)。
 - **与 LLM**:HTTPS,JSON 请求/响应,每层一次,异步。**走 GameNPC(比赛官方通道)**;接口抽象成`IAIProvider`,`FGameNPCProvider`是正式实现,开发期可切一个 OpenAI 兼容的`FDebugProvider`本地联调,避免频繁占用官方额度。**务必尽早跑通 GameNPC 的鉴权 + 一次真实往返**(填进 W6 前的技术预研,别拖到最后),把它的 QPS 限制、超时表现、返回格式摸清楚,直接决定 §16 兜底策略的触发阈值。
+
+  > ⚠️ **已过时（2026-08-01，D-23）**：GameNPC 是比赛通道，退赛后不再适用，
+  > `FGameNPCProvider` 从未实现。`IAIProvider` 这个抽象本身**保留并且证明了价值**——
+  > 现在有四个实现（Local / Remote / Replay / Llm 直连）。
+  > 当前生产路径是 `FSHMRemoteProvider` → 自建决策网关 `DirectorService/`，
+  > key 与 prompt 都在服务端。本节其余内容仅作存档，以 `DECISIONS.md` §4.5 为准。
 - **存档**:三层——Runtime(当前 Run)、Mirror(跨 Run 的画像历史,MVP 只存最近若干局的简版)、Player(解锁,MVP 可空)。本地`USaveGame`,异步写。
 
 ---

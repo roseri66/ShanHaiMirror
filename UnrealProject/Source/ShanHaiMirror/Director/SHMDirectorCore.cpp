@@ -1,11 +1,13 @@
 #include "SHMDirectorCore.h"
 #include "SHMLocalProvider.h"
-#include "SHMLlmProvider.h"
+#include "SHMRemoteProvider.h"
+#include "SHMLlmProvider.h"   // 内容被 SHM_DEV_DIRECT_LLM 守卫，默认为空
 #include "SHMReplayProvider.h"
 #include "SHMRuleResolver.h"
 #include "SHMDecisionValidator.h"
 #include "SHMJsonIntent.h"
 #include "SHMDecisionLogFormat.h"
+#include "SHMDirectorWireFormat.h"
 #include "Framework/SHMGameplayTags.h"
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
@@ -85,8 +87,13 @@ void USHMDirectorCore::Initialize(FSubsystemCollectionBase& Collection)
 	LoadRuleTableAndFallback();
 
 	// --- Provider 选择 ---
-	// 优先级：回放（显式开启，录屏/测试用）→ LLM（key 就位）→ 本地
+	// 优先级：回放（显式开启，录屏/测试用）→ Remote（决策网关后端，D-23）
+	//        → LLM 直连（key 就位）→ 本地
 	// 选谁都不影响下游：DirectorCore 只认 ISHMAIProvider，失败一律降级本地。
+	//
+	// ⚠️ 变的**只有这一段构造代码**。决策编排（DecideForFloor / FinishDecision
+	// 的三级降级、四道护栏、查表出数值）一行未动 —— 加了一整套后端服务而
+	// 编排层零改动，这正是当初保留 ISHMAIProvider 抽象而不直接写 HTTP 的证据。
 	const FString ReplayScript = FPlatformMisc::GetEnvironmentVariable(TEXT("SHM_REPLAY_SCRIPT"));
 	if (!ReplayScript.IsEmpty())
 	{
@@ -103,12 +110,25 @@ void USHMDirectorCore::Initialize(FSubsystemCollectionBase& Collection)
 
 	if (!Provider)
 	{
+		TUniquePtr<FSHMRemoteProvider> Remote = MakeUnique<FSHMRemoteProvider>();
+		if (Remote->IsAvailable())
+		{
+			Provider = MoveTemp(Remote);
+		}
+	}
+
+#if SHM_DEV_DIRECT_LLM
+	// 直连 LLM —— **默认不编译**（D-23）。prompt 真源已在服务端，
+	// 客户端再拼一份就是同一个游戏两套人格。仅在无后端可用时打开调试。
+	if (!Provider)
+	{
 		TUniquePtr<FSHMLlmProvider> Llm = MakeUnique<FSHMLlmProvider>();
 		if (Llm->IsAvailable())
 		{
 			Provider = MoveTemp(Llm);
 		}
 	}
+#endif
 
 	if (!Provider)
 	{
@@ -128,6 +148,14 @@ void USHMDirectorCore::ResetRun()
 	FloorRecords.Empty();
 	RunId        = FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens);
 	RunStartedAt = FDateTime::UtcNow().ToIso8601();
+
+	// 告知 Provider 本局标识。默认空实现，只有 Remote 需要它——
+	// 上行请求体里的 runId 必须与决策日志的 runId 一致，
+	// 否则 M5 的回流聚合无法把两边关联起来。
+	if (Provider)
+	{
+		Provider->OnRunStarted(RunId);
+	}
 }
 
 FString USHMDirectorCore::GetEffectiveSourceLabel() const
@@ -316,12 +344,19 @@ void USHMDirectorCore::DecideForFloorAsync(const FPlayerProfile& Profile, int32 
 		// --- 降级 ①：Provider 交不出结果（超时/HTTP 错/解析失败/脚本缺层）---
 		if (!bSuccess)
 		{
+			// 具体原因（不可达 / 超时 / 被限流 / 响应无法解析…）由 Provider 提供。
+			// 空则回退到通用措辞——现有 Provider 不实现它也不会出错。
+			const FString Detail = Provider.IsValid() ? Provider->GetLastFailureReason() : FString();
+			const FString Reason = Detail.IsEmpty()
+				? FString::Printf(TEXT("%s 无可用输出"), *ProviderId)
+				: FString::Printf(TEXT("%s %s"), *ProviderId, *Detail);
+
 			UE_LOG(LogSHMDirectorCore, Warning,
-				TEXT("[%s] 未能产出决策（耗时 %.0fms）——降级本地"), *ProviderId, ElapsedMs);
+				TEXT("[%s] 未能产出决策（耗时 %.0fms，%s）——降级本地"),
+				*ProviderId, ElapsedMs, Detail.IsEmpty() ? TEXT("原因未细分") : *Detail);
 
 			const FDirectorIntent LocalIntent = LocalFallback->RequestIntent(Ctx);
-			FinishDecision(Ctx, LocalIntent, ProviderId, true,
-				FString::Printf(TEXT("%s 无可用输出"), *ProviderId), ElapsedMs, OnDecision);
+			FinishDecision(Ctx, LocalIntent, ProviderId, true, Reason, ElapsedMs, OnDecision);
 			return;
 		}
 
@@ -484,31 +519,12 @@ void USHMDirectorCore::RecordLogEntry(const FDirectorContext& Context, const FDi
 	TSharedPtr<FJsonObject> Floor = MakeShared<FJsonObject>();
 	Floor->SetNumberField(Key_FloorIndex, Context.FloorIndex);
 
-	// --- 画像 ---
-	TSharedPtr<FJsonObject> Profile = MakeShared<FJsonObject>();
-	Profile->SetNumberField(TEXT("buildConcentration"), Context.Profile.BuildConcentration);
-	Profile->SetNumberField(TEXT("combatEfficiency"),   Context.Profile.CombatEfficiency);
-	Profile->SetNumberField(TEXT("resourceSurplus"),    Context.Profile.ResourceSurplus);
-	Profile->SetNumberField(TEXT("strategySwitch"),     Context.Profile.StrategySwitch);
-	Profile->SetNumberField(TEXT("survivalPressure"),   Context.Profile.SurvivalPressure);
-	Profile->SetNumberField(TEXT("confidence"),         Context.Profile.Confidence);
-	Profile->SetStringField(TEXT("dominantArchetype"),  Context.Profile.DominantArchetype.GetTagName().ToString());
-	Floor->SetObjectField(Key_Profile, Profile);
-
-	// --- 约束（LLM 当时能选的范围）---
-	TSharedPtr<FJsonObject> CtxObj = MakeShared<FJsonObject>();
-	CtxObj->SetNumberField(TEXT("challengeBudget"), Context.ChallengeBudget);
-	TArray<TSharedPtr<FJsonValue>> AvailRules;
-	for (const FSHMAvailableRule& Rule : Context.AvailableRules)
-	{
-		TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
-		R->SetStringField(Key_Tag,   Rule.RuleTag.GetTagName().ToString());
-		R->SetStringField(Key_Level, Rule.Level);
-		R->SetNumberField(Key_Cost,  Rule.Cost);
-		AvailRules.Add(MakeShared<FJsonValueObject>(R));
-	}
-	CtxObj->SetArrayField(TEXT("availableRules"), AvailRules);
-	Floor->SetObjectField(Key_Context, CtxObj);
+	// --- 画像 / 约束 ---
+	// 序列化实现在 FSHMDirectorWire，不在这里手拼：同一个结构体的 JSON 形态
+	// 若存在两处（日志一份、上行请求一份），第三处出现时必然三份不一致。
+	// 见 SHMDirectorWireFormat.h 的说明。
+	Floor->SetObjectField(Key_Profile, FSHMDirectorWire::ProfileToJson(Context.Profile));
+	Floor->SetObjectField(Key_Context, FSHMDirectorWire::LogContextToJson(Context));
 
 	// --- 护栏前的原始意图 ★ 本日志最值钱的字段 ---
 	// 「Provider 想干什么」vs「最终允许它干什么」并排，是本项目最有说服力的一屏数据。

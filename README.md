@@ -47,7 +47,7 @@ USTRUCT() struct FDirectorDecision
 ```
 
 **② LLM 这一步可以整体失败。**
-三个 Provider 实现同一接口，失败逐级降级到本地规则表，日志留痕。**本地 Provider 单独就是一个完整可玩的游戏**——LLM 是可拔插的增强层，不是依赖。拔掉网线，游戏照常运转。
+多个 Provider 实现同一接口，失败逐级降级到本地规则表，日志留痕。**本地 Provider 单独就是一个完整可玩的游戏**——LLM 是可拔插的增强层，不是依赖。拔掉网线、或后端服务停掉，游戏都照常运转。
 
 **③ 画像分析是纯函数。**
 `ProfileAnalyzer` 无副作用、无引擎依赖、不碰随机数。相同输入必定得到相同画像。这是它能被单测的前提，也是断网可跑的前提。
@@ -75,8 +75,8 @@ USTRUCT() struct FDirectorDecision
              └ History[]                     上层决策 + 玩家是否适应
    ▼
 ④ CHOOSE     IAIProvider::RequestIntentAsync(Context, OnDone) ──> FDirectorIntent
-             ├ FLocalProvider   规则表        （永远可用·基线）
-             ├ FLlmProvider     HTTP + JSON   （可失败）
+             ├ FRemoteProvider  HTTP → 决策网关（可失败·生产路径）
+             ├ FLocalProvider   规则表        （永远可用·降级终点）
              └ FReplayProvider  预录脚本      （确定性·录屏与集成测试）
    ▼
 ⑤ VALIDATE   四道护栏                                                 【可单测】
@@ -124,8 +124,9 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | `BehaviorRecorder` | `UGameInstanceSubsystem` | 累积层行为快照 | 不分析、不打分、不决策 |
 | `ProfileAnalyzer` | **纯静态函数** | 快照 + 历史 → 五维画像 | 不碰 UObject / LLM / 随机数 |
 | `DirectorCore` | `UGameInstanceSubsystem` | 编排：约束 → 请求 → 校验 → 映射 | 不直接改游戏对象、不发 HTTP |
-| `IAIProvider` | 接口（3 实现） | 在给定约束内产出 Intent | 不做校验、不接触数值 |
+| `IAIProvider` | 接口（4 实现） | 在给定约束内产出 Intent | 不做校验、不接触数值 |
 | `FloorGenerator` | `UObject` | 消费 Decision 执行 | **不做任何决策** |
+| `DirectorService` | Spring Boot 服务 | 持有 key、拼 prompt、调 LLM、缓存 | **不做校验**——护栏留在客户端 |
 
 `FDirectorDecision` 是 AI 层与玩法层的**唯一**接口——玩法层不知道决策来自 LLM 还是本地表。
 
@@ -139,6 +140,76 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | 失败兜底 | C++ | 断网必须可玩 |
 | **选哪些规则组合、针对哪个维度** | **LLM** | 多个合法解时做有品味的选择 |
 | **台词 / 决策解释** | **LLM** | 规则表写不出的自然语言 |
+
+---
+
+## 决策网关 `DirectorService/`（Java 17 + Spring Boot 3）
+
+**存在的理由只有两条**：① key 不能进客户端；② 决策数据要能跨局聚合。
+不服务于这两条的功能一律不做——没有账号、没有排行榜、没有管理后台、不拆微服务。
+
+```
+客户端 FSHMRemoteProvider ──HTTP──> DirectorService ──> LLM
+   ↑                                      │
+   └── 四道护栏在这一侧，不在服务端 ────────┘
+```
+
+### 最重要的一条是**否决**：护栏不上服务端
+
+把校验搬到服务端是最容易想到、也最该拒绝的做法。三条理由按硬度排序：
+
+1. **会破坏「断网可玩」这条不变量**——护栏在服务端，则后端不可达时无人校验本地 Provider 的输出
+2. **逻辑双写必然漂移**——C++ 一份、Java 一份，两边对 Fairness「连续」的定义差半点，表现就是玩家侧与统计侧对不上，且极难查
+3. **单机游戏里客户端就是权威**——服务端校验的前提是"不信任客户端"，但客户端本来就在玩家手里。为一个不成立的信任边界付双写代价，是纯亏
+
+> 问「为什么不把校验放服务端」时，答案不是"没时间"，是**信任边界不在那里**。
+
+### 关键设计
+
+| 项 | 做法 | 为什么 |
+|---|---|---|
+| **响应格式** | Intent 本体，**不加信封**，meta 走 `X-SHM-*` 响应头 | body 与 LLM 原始输出、与回放脚本三者字节级同格式：客户端零剥离代码，直接复用「不信任 LLM 输出」的那个解析器；任何一次真实响应可直接另存为回放脚本 |
+| **熔断** | Resilience4j，**刻意不加重试** | 上游 10s < 客户端 12s，一次重试最坏 20s 而客户端早已放弃——重试的结果没人接收，只是白烧一次调用。失败时正确的行为是让客户端降级本地 |
+| **限流** | Bucket4j，`runId` + IP 双维度，超限返 **429** | 保护的是上游 LLM 配额，不是这台服务器。**429 不是错误，是设计内的降级路径** |
+| **缓存** | 指纹分桶 + 同语境最多 3 条台词轮换 | 见下 |
+| **可观测** | Micrometer → `/actuator/prometheus` | P50/P99 取代"我手工测了三次" |
+
+### 缓存：一个被真实流量推翻的设计
+
+指纹只取影响决策的量并对连续量分桶（五维每 20 分一桶、置信度三档、`runId` 不入 key）。
+缓存整个 Intent 会让**同类玩家听到同一句台词**，而白泽的人格是体验核心之一——
+故同一语境保留最多 3 条，命中时随机取一条。
+
+初版规定"未攒满 3 条不命中"。单测全绿，拿同一请求连发 12 次也完美命中。
+**但真实游玩 3 局，一次都没命中过**：一局只发 2 次决策请求（共 3 层，F0 是观察层
+不走 Provider），F1/F2 预算不同天然是两条指纹，同一指纹要攒满得连打 4 局以上。
+
+改为**边用边攒**：有候选就能用，未满时隔一次仍走 LLM 补充。3 局的命中率
+从 0% 变成 33%，长期稳态不变。
+
+> 教训写在 `CacheUnderRealTrafficTest` 里：**验证缓存必须用真实的访问模式。**
+> 用循环验证的是"缓存能不能存取"，而缓存真正要回答的是"在我的流量下省不省钱"——
+> 前者绿不代表后者成立。
+
+### 跑起来
+
+```powershell
+cd DirectorService
+mvn spring-boot:run          # 端口 8080
+mvn test                     # 47 个测试
+```
+
+key 配在 `src/main/resources/application-local.yml`（**已 gitignore**），
+或走环境变量注入：
+
+```yaml
+shm:
+  llm:
+    api-key: sk-...
+```
+
+**不配 key 也能起**：走占位实现，响应头 `X-SHM-Source: ServerLocal` 如实标注。
+**后端不起也不影响游戏**：客户端降级本地 Provider，玩家零感知。
 
 ---
 
@@ -160,7 +231,7 @@ LLM 选择：Enemy.Tank +0.3（压缩输出空间）· Enemy.Rush +0.2（打断�
 | 武器切换 + 弓（画像分化的输入源） | ✅ 已完成 · 攻击按 AttackPattern 分发 |
 | 敌人四原型 + 遭遇系统消费敌人权重 | ✅ 已完成 · 数据驱动（CSV）· 刷怪点导航网格投影 |
 | **闭环端到端可玩** | ✅ 打一局 3 层：真实行为 → 画像 → 决策 → 下层刷怪与规则生效，肉眼可见被针对 |
-| `IAIProvider` 三实现（链路 ④） | ✅ Local（降级终点）· **Llm**（OpenAI 兼容，异步）· **Replay**（确定性回放） |
+| `IAIProvider` 四实现（链路 ④） | ✅ **Remote**（决策网关，生产路径）· Local（降级终点）· **Replay**（确定性回放）· Llm（直连，默认不编译） |
 | **三级降级链路** | ✅ Provider 失败 → 护栏拒绝 → 安全兜底，每级留日志；**无 key/断网完整可玩** |
 | 决策日志（含护栏前 RawIntent + 溯源） | ✅ 一局结束自动导出 JSON（`schemaVersion` 契约，回放/可视化共用） |
 | **导演报告卡（链路 ⑦）** | ✅ 层间弹出「我看到的 → 本层调整 → 白泽台词 → 决策溯源」，读完才开打 |
@@ -252,19 +323,37 @@ UnrealProject/ShanHaiMirror.uproject     右键 Generate Visual Studio project f
 UnrealProject/ShanHaiMirror.sln          Development Editor | Win64
 ```
 
-LLM Provider 走**任一 OpenAI 兼容端点**，全部通过环境变量配置（**未配置时自动使用本地
-Provider，游戏完整可玩**）：
+### LLM 配置：key 在服务端，不在客户端
+
+**客户端不持有任何凭据。** LLM 调用由决策网关 `DirectorService/` 承担（D-23），
+客户端只知道网关地址：
 
 ```powershell
-setx SHM_LLM_API_KEY  "sk-..."                      # 必填，缺省则用本地 Provider
-setx SHM_LLM_BASE_URL "https://api.deepseek.com/v1" # 选填，默认 OpenAI
-setx SHM_LLM_MODEL    "deepseek-chat"               # 选填
-setx SHM_LLM_TIMEOUT  "10"                          # 选填，秒
+setx SHM_DIRECTOR_URL "http://localhost:8080"   # 选填，默认就是它
+setx SHM_DIRECTOR_TIMEOUT "12"                  # 选填，秒
 ```
 
-设置后需**重启编辑器**（环境变量在进程启动时读取）。key 只存在于内存，
-不入库、不进日志。删除用 `[Environment]::SetEnvironmentVariable("SHM_LLM_API_KEY", $null, "User")`
-——`setx` 无法置空（踩坑 #20）。
+key 配在服务端的 `DirectorService/src/main/resources/application-local.yml`
+（**已 gitignore**），或走环境变量注入：
+
+```yaml
+shm:
+  llm:
+    api-key: sk-...
+```
+
+```powershell
+cd DirectorService
+mvn spring-boot:run
+```
+
+**后端起不起得来都不影响游戏可玩性**：网关不可达、超时、返回 5xx / 429，
+客户端一律降级本地 Provider，日志留痕，玩家零感知。
+未配 key 时服务端走占位实现，响应头 `X-SHM-Source: ServerLocal` 如实标注。
+
+> 客户端仍保留一个直连 LLM 的 `FSHMLlmProvider`，但**默认不编译**
+> （`ShanHaiMirror.Build.cs` 里 `SHM_DEV_DIRECT_LLM=0`），仅供无后端时调试。
+> 生产路径的 prompt 真源是服务端的 `prompt.yaml`，两者允许漂移、不保证一致。
 
 ---
 

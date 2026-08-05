@@ -4,6 +4,8 @@
 #include "Serialization/JsonWriter.h"
 #include "Serialization/JsonSerializer.h"
 
+#if SHM_DEV_DIRECT_LLM   // 直连模式，默认不编译（D-23）
+
 // ============================================================================
 //  System prompt —— 角色 + 严格输出契约
 //
@@ -169,3 +171,5 @@ FString FSHMPromptBuilder::BuildRequestBody(const FDirectorContext& Context, con
 	FJsonSerializer::Serialize(Root.ToSharedRef(), Writer);
 	return Body;
 }
+
+#endif // SHM_DEV_DIRECT_LLM

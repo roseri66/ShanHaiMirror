@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "SHMDirectorTypes.h"
 
+#if SHM_DEV_DIRECT_LLM   // 直连模式，默认不编译（D-23）
+
 // ============================================================================
 // Prompt 构建 —— Context → OpenAI 兼容 chat completions 请求体
 //
@@ -26,3 +28,5 @@ public:
 	static FString BuildSystemPrompt();
 	static FString BuildUserPrompt(const FDirectorContext& Context);
 };
+
+#endif // SHM_DEV_DIRECT_LLM

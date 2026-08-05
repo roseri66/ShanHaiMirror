@@ -34,6 +34,20 @@ WebReplay/*.local
 # MCP 服务器配置：给 AI 助手查 UE 资产用的工具集，属于个人开发环境而非项目产物
 .mcp.json
 
+# === Backend（DirectorService · Java 17 + Spring Boot + Maven）===
+# 用 Maven 不用 Gradle：本机已装 Maven 3.9.16、未装 Gradle，Spring Boot 两者支持相同，
+# 没有理由为此再装一套构建工具。故忽略的是 target/ 而非 build/ 与 .gradle/。
+DirectorService/target/
+DirectorService/*.log
+
+# ★ 本地配置里有 LLM 的 API key，绝不能入库。
+# 本次开工的全部意义是「key 不进客户端」，key 若进了 git，
+# 就是把一个安全问题换成了一个更严重的安全问题（客户端的 key 只泄露给玩家，
+# 仓库里的 key 泄露给全世界，且 git 历史删不干净——见 2026-07-29 那次 filter-repo）。
+# CI 与生产走环境变量注入，本地走这个文件。
+DirectorService/src/main/resources/application-local.yml
+DirectorService/src/main/resources/application-local.yaml
+
 # === Misc ===
 *.log
 *.crash

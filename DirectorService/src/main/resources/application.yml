@@ -1,0 +1,68 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: director-service
+
+  # 允许把本地配置放进 application-local.yml（已 gitignore，用来放 key）。
+  # 该文件不存在时不报错——CI 与他人 clone 后照样能起。
+  profiles:
+    group:
+      default: local
+  config:
+    import:
+      # prompt 真源。单独成文件是为了让"改 prompt"不需要碰 application.yml，
+      # 也让它在仓库里是一个能直接读的文本文件。**不是 optional**——
+      # 缺了它服务起不来，这是对的：没有 prompt 的决策网关没有意义。
+      - "classpath:prompt.yaml"
+      # 本地配置（放 key，已 gitignore）。**是 optional**——
+      # 他人 clone 后没有这个文件也能起，只是走 stub 路径。
+      - "optional:classpath:application-local.yml"
+
+  # web 用 Tomcat（servlet），webflux 只作为 HTTP 客户端库存在。
+  # 不声明的话两个 starter 同时在 classpath 上会让 Spring 选 reactive，
+  # 而我们的 Controller 是 servlet 风格的。
+  main:
+    web-application-type: servlet
+
+  # Jackson：客户端多发字段不该让请求 400。
+  # 上行契约会演进，而客户端与服务端不可能同时上线。
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: false
+    default-property-inclusion: non_null
+
+logging:
+  level:
+    com.shanhai.director: INFO
+
+# 可观测（M4）。**只暴露 health 与 prometheus 两个端点**——
+# actuator 默认还带 env / configprops / beans / heapdump，
+# 其中 env 与 configprops 会把配置打出来。虽然 Spring 对
+# 名字含 key/secret/password 的项做了脱敏，但依赖它的启发式规则
+# 来保护 API key 是不必要的风险：**用不到的端点就别开**。
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never   # 不对外暴露内部组件细节
+  metrics:
+    tags:
+      application: director-service
+
+# ⚠️ M1 起才用得到。key 走环境变量或 application-local.yml，**绝不写在这里**。
+#
+# 注意 ${SHM_LLM_API_KEY:} 的空值兜底与"未配置"是两种语义，别混——
+# 这是踩坑 #20（setx 无法置空、占位值让 Provider 误判可用）的服务端版：
+# 空字符串是一个"配置了但值为空"的状态，判可用性时必须把它和真正的
+# 未配置一起当成不可用，否则又会出现"配了但用不了却一直重试"。
+shm:
+  llm:
+    api-key: ${SHM_LLM_API_KEY:}
+    base-url: ${SHM_LLM_BASE_URL:https://api.deepseek.com/v1}
+    model: ${SHM_LLM_MODEL:deepseek-chat}
+    timeout-seconds: ${SHM_LLM_TIMEOUT:10}

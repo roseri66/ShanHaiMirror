@@ -10,6 +10,8 @@
 #include "Misc/Paths.h"
 #include "HAL/PlatformMisc.h"
 
+#if SHM_DEV_DIRECT_LLM   // 直连模式，默认不编译（D-23）
+
 DEFINE_LOG_CATEGORY_STATIC(LogSHMLlm, Log, All);
 
 namespace
@@ -189,3 +191,5 @@ void FSHMLlmProvider::ArchiveExchange(const FString& RequestBody, const FString&
 	FFileHelper::SaveStringToFile(Archive, *(Dir / FString::Printf(TEXT("%s.txt"), *Stamp)),
 		FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
 }
+
+#endif // SHM_DEV_DIRECT_LLM
