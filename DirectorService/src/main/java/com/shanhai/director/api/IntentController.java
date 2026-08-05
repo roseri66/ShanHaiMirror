@@ -12,6 +12,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Optional;
+
+import com.shanhai.director.cache.IntentCache;
 import com.shanhai.director.llm.LlmClient;
 import com.shanhai.director.ratelimit.RateLimiter;
 
@@ -36,6 +39,7 @@ public class IntentController {
 
     private final LlmClient llmClient;
     private final RateLimiter rateLimiter;
+    private final IntentCache intentCache;
 
     /**
      * 故障注入开关，用于 D-23 要求的第三条降级回归
@@ -50,9 +54,10 @@ public class IntentController {
     @Value("${shm.mock-garbage:false}")
     private boolean mockGarbage;
 
-    public IntentController(LlmClient llmClient, RateLimiter rateLimiter) {
+    public IntentController(LlmClient llmClient, RateLimiter rateLimiter, IntentCache intentCache) {
         this.llmClient = llmClient;
         this.rateLimiter = rateLimiter;
+        this.intentCache = intentCache;
     }
 
     /** 上行路径。<b>必须与 UE 侧 FSHMRemoteProvider::IntentPath 一致</b>，那边有测试钉着。 */
@@ -107,11 +112,23 @@ public class IntentController {
                 request.availableArchetypes() == null ? 0 : request.availableArchetypes().size(),
                 request.decisionHistory() == null ? 0 : request.decisionHistory().size());
 
+        // --- 缓存（M3）---
+        // 命中的是同一"决策情境"而非同一请求：指纹对连续量分桶，
+        // 87 分和 85 分的玩家算同一类。同一指纹存 3 条、随机取 1 条，
+        // 是为了不让同类玩家听到同一句台词——白泽的人格是体验核心之一。
+        Optional<DirectorIntent> cached = intentCache.lookup(request);
+        if (cached.isPresent()) {
+            return respond(cached.get(), "Cache", "hit", startedAt);
+        }
+
         // --- 真实 LLM 路径 ---
         if (llmClient.isAvailable()) {
             DirectorIntent fromLlm = llmClient.requestIntent(request).block();
             if (fromLlm != null) {
-                return respond(fromLlm, "Llm", startedAt);
+                // 只缓存**真实 LLM 结果**。stub 与降级产物都不进缓存：
+                // 缓存里混进占位内容，之后每次命中都在发假决策。
+                intentCache.store(request, fromLlm);
+                return respond(fromLlm, "Llm", "miss", startedAt);
             }
             // 上游失败：**返回 5xx 而不是悄悄回落 stub**。
             // 回落的话客户端会拿到一个"成功"的响应，把 stub 的固定配比
@@ -122,7 +139,7 @@ public class IntentController {
         }
 
         // --- 未配置 key：stub 路径（M0 行为，保留供无 key 时演示）---
-        return respond(buildStubIntent(), "ServerLocal", startedAt);
+        return respond(buildStubIntent(), "ServerLocal", "miss", startedAt);
     }
 
     /**
@@ -133,11 +150,11 @@ public class IntentController {
      * 客户端会把它记进决策日志的 trace，**谎报来源等于往证据链里掺假**。
      * 这与客户端"UI 显示实际发生了什么、不是配置成了什么"（踩坑 #20）是同一条线。
      */
-    private ResponseEntity<?> respond(DirectorIntent intent, String source, long startedAt) {
+    private ResponseEntity<?> respond(DirectorIntent intent, String source, String cache, long startedAt) {
         final long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L;
         return ResponseEntity.ok()
                 .header("X-SHM-Source", source)
-                .header("X-SHM-Cache", "miss")   // 缓存是 M3 的事，现在恒为 miss
+                .header("X-SHM-Cache", cache)
                 .header("X-SHM-Elapsed-Ms", String.valueOf(elapsedMs))
                 .body(intent);
     }
