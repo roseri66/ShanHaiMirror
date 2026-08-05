@@ -200,17 +200,20 @@ public class LlmClient {
         if (e instanceof CallNotPermittedException) {
             log.info("熔断器为 {} 状态，跳过上游调用直接判失败（客户端将降级本地）",
                     circuitBreaker.getState());
+            failureListener.accept("circuit_open");
             return;
         }
 
         if (e instanceof UpstreamUnusableException) {
             // parseEnvelope 里已经记过具体原因，这里只补熔断器视角的一句
             log.warn("上游响应不可用（已计入熔断失败率），耗时 {}ms", elapsedMs);
+            failureListener.accept("parse");
             return;
         }
 
         if (e instanceof WebClientResponseException http) {
             int code = http.getStatusCode().value();
+            failureListener.accept(code == 401 || code == 403 ? "auth" : "http");
             if (code == 401 || code == 403) {
                 // 只在第一次真正翻转时打 error，避免并发下刷屏
                 if (authFailed.compareAndSet(false, true)) {
@@ -224,5 +227,20 @@ public class LlmClient {
         }
         log.warn("上游调用失败（超时或网络错误），耗时 {}ms：{} —— 判失败",
                 elapsedMs, e.getClass().getSimpleName());
+        failureListener.accept(
+                e instanceof java.util.concurrent.TimeoutException ? "timeout" : "network");
+    }
+
+    /**
+     * 失败回调，供指标层订阅。
+     *
+     * <p>用回调而不是让 LlmClient 直接依赖 DirectorMetrics，
+     * 是为了避免循环依赖——DirectorMetrics 的构造函数需要 LlmClient
+     * （读熔断器状态做 Gauge）。默认是空实现，指标层在启动时注册。
+     */
+    private volatile java.util.function.Consumer<String> failureListener = reason -> { };
+
+    public void setFailureListener(java.util.function.Consumer<String> listener) {
+        this.failureListener = listener == null ? reason -> { } : listener;
     }
 }

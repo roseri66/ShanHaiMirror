@@ -89,6 +89,20 @@
             <version>8.14.0</version>
         </dependency>
 
+        <!-- 可观测（M4）。
+             只暴露 /actuator/prometheus 端点，**不搭 Grafana 面板**——
+             按 DECISIONS D-23 修正¹：本机没有 Docker，而设计文档第十二节
+             早就预设了这个应对（「面板是给面试官看的证据，不必 7×24 在线」）。
+             指标数据是真的、可 curl 可查，只是没有图。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

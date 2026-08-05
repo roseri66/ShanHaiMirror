@@ -62,20 +62,38 @@ public class RateLimiter {
     private final Map<String, Bucket> runBuckets = new ConcurrentHashMap<>();
     private final Map<String, Bucket> ipBuckets = new ConcurrentHashMap<>();
 
+    /** 限流结果。带上是哪个维度拒的——两个维度的含义完全不同，指标要分道。 */
+    public enum Decision {
+        /** 放行 */
+        ALLOWED,
+        /** 单局配额用尽：多半是客户端 bug 在循环重试 */
+        RUN_QUOTA_EXCEEDED,
+        /** IP 配额用尽：多半是有人在刷 */
+        IP_QUOTA_EXCEEDED;
+
+        public boolean allowed() {
+            return this == ALLOWED;
+        }
+
+        /** 指标标签用。 */
+        public String dimension() {
+            return this == RUN_QUOTA_EXCEEDED ? "run" : "ip";
+        }
+    }
+
     /**
-     * 尝试消费一个令牌。
+     * 尝试消费一个令牌，并说明被哪个维度拒绝。
      *
-     * @return true 放行；false 超限，调用方应返回 429
+     * <p>「单局超限」与「IP 超限」是两种不同的信号：前者指向客户端 bug，
+     * 后者指向滥用。合并成一个布尔值就分不清了，而指标最需要的恰恰是这个区分。
      */
-    public boolean tryConsume(String runId, String clientIp) {
-        // runId 缺失时不按 run 限流，只按 IP —— 缺 runId 本身是契约问题，
-        // 但不该因此把请求算作"无限额度"，IP 那道仍然拦得住。
+    public Decision tryConsumeDetailed(String runId, String clientIp) {
         if (runId != null && !runId.isBlank()) {
             Bucket runBucket = runBuckets.computeIfAbsent(runId, k -> newRunBucket());
             if (!runBucket.tryConsume(1)) {
                 log.info("限流：runId={} 超出单局配额 {} —— 返回 429，客户端将降级本地",
                         runId, PER_RUN_CAPACITY);
-                return false;
+                return Decision.RUN_QUOTA_EXCEEDED;
             }
         }
 
@@ -84,11 +102,22 @@ public class RateLimiter {
             if (!ipBucket.tryConsume(1)) {
                 log.info("限流：ip={} 超出每分钟配额 {} —— 返回 429，客户端将降级本地",
                         clientIp, PER_IP_CAPACITY);
-                return false;
+                return Decision.IP_QUOTA_EXCEEDED;
             }
         }
 
-        return true;
+        return Decision.ALLOWED;
+    }
+
+    /**
+     * 尝试消费一个令牌。
+     *
+     * @return true 放行；false 超限，调用方应返回 429
+     */
+    public boolean tryConsume(String runId, String clientIp) {
+        // runId 缺失时不按 run 限流，只按 IP —— 缺 runId 本身是契约问题，
+        // 但不该因此把请求算作"无限额度"，IP 那道仍然拦得住。
+        return tryConsumeDetailed(runId, clientIp).allowed();
     }
 
     private static Bucket newRunBucket() {

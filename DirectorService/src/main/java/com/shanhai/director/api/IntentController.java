@@ -16,6 +16,7 @@ import java.util.Optional;
 
 import com.shanhai.director.cache.IntentCache;
 import com.shanhai.director.llm.LlmClient;
+import com.shanhai.director.metrics.DirectorMetrics;
 import com.shanhai.director.ratelimit.RateLimiter;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -40,6 +41,7 @@ public class IntentController {
     private final LlmClient llmClient;
     private final RateLimiter rateLimiter;
     private final IntentCache intentCache;
+    private final DirectorMetrics metrics;
 
     /**
      * 故障注入开关，用于 D-23 要求的第三条降级回归
@@ -54,10 +56,12 @@ public class IntentController {
     @Value("${shm.mock-garbage:false}")
     private boolean mockGarbage;
 
-    public IntentController(LlmClient llmClient, RateLimiter rateLimiter, IntentCache intentCache) {
+    public IntentController(LlmClient llmClient, RateLimiter rateLimiter,
+                            IntentCache intentCache, DirectorMetrics metrics) {
         this.llmClient = llmClient;
         this.rateLimiter = rateLimiter;
         this.intentCache = intentCache;
+        this.metrics = metrics;
     }
 
     /** 上行路径。<b>必须与 UE 侧 FSHMRemoteProvider::IntentPath 一致</b>，那边有测试钉着。 */
@@ -88,7 +92,9 @@ public class IntentController {
         // --- 限流。429 不是错误，是设计内的降级路径 ---
         // 保护的是上游 LLM 配额，不是这台服务器。客户端收到 429 会降本地，
         // 玩家零感知，且客户端为它记了独立日志（"被限流"与"后端挂了"可区分）。
-        if (!rateLimiter.tryConsume(request.runId(), http.getRemoteAddr())) {
+        RateLimiter.Decision limit = rateLimiter.tryConsumeDetailed(request.runId(), http.getRemoteAddr());
+        if (!limit.allowed()) {
+            metrics.recordRateLimited(limit.dimension());
             rateLimiter.evictIfLarge();
             return ResponseEntity.status(429).build();
         }
@@ -151,7 +157,9 @@ public class IntentController {
      * 这与客户端"UI 显示实际发生了什么、不是配置成了什么"（踩坑 #20）是同一条线。
      */
     private ResponseEntity<?> respond(DirectorIntent intent, String source, String cache, long startedAt) {
-        final long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L;
+        final long elapsedNanos = System.nanoTime() - startedAt;
+        final long elapsedMs = elapsedNanos / 1_000_000L;
+        metrics.recordDecision(source, elapsedNanos);
         return ResponseEntity.ok()
                 .header("X-SHM-Source", source)
                 .header("X-SHM-Cache", cache)

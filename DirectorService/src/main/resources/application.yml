@@ -37,6 +37,23 @@ logging:
   level:
     com.shanhai.director: INFO
 
+# 可观测（M4）。**只暴露 health 与 prometheus 两个端点**——
+# actuator 默认还带 env / configprops / beans / heapdump，
+# 其中 env 与 configprops 会把配置打出来。虽然 Spring 对
+# 名字含 key/secret/password 的项做了脱敏，但依赖它的启发式规则
+# 来保护 API key 是不必要的风险：**用不到的端点就别开**。
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never   # 不对外暴露内部组件细节
+  metrics:
+    tags:
+      application: director-service
+
 # ⚠️ M1 起才用得到。key 走环境变量或 application-local.yml，**绝不写在这里**。
 #
 # 注意 ${SHM_LLM_API_KEY:} 的空值兜底与"未配置"是两种语义，别混——
