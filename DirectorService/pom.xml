@@ -54,6 +54,41 @@
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
 
+        <!-- 熔断（M2）。
+             为什么用库而不像客户端那样手写：SHMLlmProvider.cpp 里那个
+             `if (Code == 401) bAuthFailed = true` 就是熔断器的手写最简版——
+             一个布尔位、永不半开、进程级作用域。在那个位置它是对的：
+             单机单进程、失败原因唯一（key 错），一个 bool 完全够。
+             服务端不一样：多客户端并发、失败原因多样（超时/限流/5xx）、
+             需要半开探测、需要滑动窗口而不是"一次就停"、还要把状态暴露成指标。
+             这些是专用件的复杂度，自己写第三遍就会写出一个更差的 Resilience4j。
+             判据始终是「专用件的复杂度 vs 需求的复杂度」。 -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-spring-boot3</artifactId>
+            <version>2.2.0</version>
+        </dependency>
+        <!-- CircuitBreakerOperator（把熔断器接进 Mono 链）在这个模块里，
+             spring-boot3 starter 不传递依赖它 -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-reactor</artifactId>
+            <version>2.2.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+
+        <!-- 限流（M2）。
+             同一个库在 MetaPool 里是**被治理的对象**（控制面纳管它），
+             在这里是**治理工具本身**（拿它限流保护上游 LLM 配额）。 -->
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j_jdk17-core</artifactId>
+            <version>8.14.0</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

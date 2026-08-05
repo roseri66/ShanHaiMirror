@@ -15,6 +15,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shanhai.director.api.DirectorIntent;
 import com.shanhai.director.api.IntentRequest;
 
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.reactor.circuitbreaker.operator.CircuitBreakerOperator;
 import reactor.core.publisher.Mono;
 
 /**
@@ -51,11 +54,15 @@ public class LlmClient {
      */
     private final AtomicBoolean authFailed = new AtomicBoolean(false);
 
+    private final CircuitBreaker circuitBreaker;
+
     public LlmClient(WebClient.Builder builder, LlmProperties llm,
-                     PromptProperties prompt, PromptBuilder promptBuilder) {
+                     PromptProperties prompt, PromptBuilder promptBuilder,
+                     CircuitBreaker llmCircuitBreaker) {
         this.llm = llm;
         this.prompt = prompt;
         this.promptBuilder = promptBuilder;
+        this.circuitBreaker = llmCircuitBreaker;
         this.webClient = builder.baseUrl(llm.baseUrlOrDefault()).build();
 
         // 只报告「有没有」，绝不打印 key 本身
@@ -64,9 +71,24 @@ public class LlmClient {
                 llm.timeout().toSeconds(), llm.usable() ? "已配置" : "未配置或不可用");
     }
 
-    /** 是否可用。key 不可用、或已因鉴权失败自我停用时返回 false。 */
+    /**
+     * 是否可用。
+     *
+     * <p>三个条件全满足才算可用：key 可用、未因鉴权失败自我停用、熔断器未断开。
+     *
+     * <p><b>熔断器断开时返回 false 而不是抛异常</b>：对上层来说
+     * "上游暂时不可用"与"没配 key"是同一件事——都该走降级。
+     * 让 Controller 去区分它们只会把降级逻辑复杂化，而玩家侧的结果完全一样。
+     */
     public boolean isAvailable() {
-        return llm.usable() && !authFailed.get();
+        return llm.usable()
+                && !authFailed.get()
+                && circuitBreaker.getState() != CircuitBreaker.State.OPEN;
+    }
+
+    /** 熔断器当前状态，供日志与 M4 的指标使用。 */
+    public String circuitState() {
+        return circuitBreaker.getState().name();
     }
 
     /**
@@ -101,11 +123,28 @@ public class LlmClient {
                 .retrieve()
                 .bodyToMono(String.class)
                 .timeout(llm.timeout())
-                .mapNotNull(raw -> parseEnvelope(raw, startedAt))
+                // 解析失败必须变成异常，不能只是 empty ——
+                // 否则"上游一直返回垃圾"在熔断器眼里是成功调用，永远不会断开，
+                // 而那恰恰是最该熔断的情况（每次都白花钱）。
+                .flatMap(raw -> {
+                    DirectorIntent intent = parseEnvelope(raw, startedAt);
+                    return intent == null
+                            ? Mono.error(new UpstreamUnusableException("响应无法解析成 Intent"))
+                            : Mono.just(intent);
+                })
+                // 熔断器包在最外层：超时、HTTP 错、解析失败都计入失败率
+                .transformDeferred(CircuitBreakerOperator.of(circuitBreaker))
                 .onErrorResume(e -> {
                     handleError(e, startedAt);
                     return Mono.empty();
                 });
+    }
+
+    /** 上游给了 200 但内容不可用。单独一个类型，让熔断器能把它计入失败。 */
+    static class UpstreamUnusableException extends RuntimeException {
+        UpstreamUnusableException(String message) {
+            super(message);
+        }
     }
 
     /** 剥 OpenAI 信封：choices[0].message.content 才是模型输出。 */
@@ -154,6 +193,21 @@ public class LlmClient {
 
     private void handleError(Throwable e, long startedAt) {
         final long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L;
+
+        // 熔断器拒绝：这是**保护动作，不是故障**。用 info 而非 warn——
+        // 上游已经连续失败到触发熔断，那些失败当时各自记过日志了，
+        // 这里再刷 warn 只是重复噪音，还会掩盖真正的新问题。
+        if (e instanceof CallNotPermittedException) {
+            log.info("熔断器为 {} 状态，跳过上游调用直接判失败（客户端将降级本地）",
+                    circuitBreaker.getState());
+            return;
+        }
+
+        if (e instanceof UpstreamUnusableException) {
+            // parseEnvelope 里已经记过具体原因，这里只补熔断器视角的一句
+            log.warn("上游响应不可用（已计入熔断失败率），耗时 {}ms", elapsedMs);
+            return;
+        }
 
         if (e instanceof WebClientResponseException http) {
             int code = http.getStatusCode().value();

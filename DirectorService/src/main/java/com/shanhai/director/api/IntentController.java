@@ -6,12 +6,16 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.shanhai.director.llm.LlmClient;
+import com.shanhai.director.ratelimit.RateLimiter;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * 决策端点。
@@ -31,9 +35,24 @@ public class IntentController {
     private static final Logger log = LoggerFactory.getLogger(IntentController.class);
 
     private final LlmClient llmClient;
+    private final RateLimiter rateLimiter;
 
-    public IntentController(LlmClient llmClient) {
+    /**
+     * 故障注入开关，用于 D-23 要求的第三条降级回归
+     * 「后端返 200 但 body 是垃圾」。
+     *
+     * <p>用启动参数而非代码分支，是为了让这条回归<b>能对着真实进程跑</b>——
+     * 单测里 mock 一个垃圾响应只能验证解析器，验证不了
+     * "客户端拿到 200 之后会不会真的降级"。
+     *
+     * <p>启动方式：{@code mvn spring-boot:run -Dspring-boot.run.arguments=--shm.mock-garbage=true}
+     */
+    @Value("${shm.mock-garbage:false}")
+    private boolean mockGarbage;
+
+    public IntentController(LlmClient llmClient, RateLimiter rateLimiter) {
         this.llmClient = llmClient;
+        this.rateLimiter = rateLimiter;
     }
 
     /** 上行路径。<b>必须与 UE 侧 FSHMRemoteProvider::IntentPath 一致</b>，那边有测试钉着。 */
@@ -43,7 +62,8 @@ public class IntentController {
     private static final int SUPPORTED_SCHEMA_VERSION = 1;
 
     @PostMapping(INTENT_PATH)
-    public ResponseEntity<DirectorIntent> intent(@RequestBody(required = false) IntentRequest request) {
+    public ResponseEntity<?> intent(@RequestBody(required = false) IntentRequest request,
+                                    HttpServletRequest http) {
         final long startedAt = System.nanoTime();
 
         // --- 版本不符：明确拒绝，不静默错读 ---
@@ -58,6 +78,26 @@ public class IntentController {
             log.warn("上行契约版本不符：收到 {}，本服务支持 {} —— 拒绝，客户端将降级本地",
                     request.schemaVersion(), SUPPORTED_SCHEMA_VERSION);
             return ResponseEntity.badRequest().build();
+        }
+
+        // --- 限流。429 不是错误，是设计内的降级路径 ---
+        // 保护的是上游 LLM 配额，不是这台服务器。客户端收到 429 会降本地，
+        // 玩家零感知，且客户端为它记了独立日志（"被限流"与"后端挂了"可区分）。
+        if (!rateLimiter.tryConsume(request.runId(), http.getRemoteAddr())) {
+            rateLimiter.evictIfLarge();
+            return ResponseEntity.status(429).build();
+        }
+
+        // --- 故障注入：返 200 但 body 是垃圾（降级回归③）---
+        // 放在限流之后、LLM 之前：这条回归验的是客户端拿到"成功但无用"的响应
+        // 会不会降级，不该顺带消耗 LLM 配额。
+        if (mockGarbage) {
+            log.warn("!! mock-garbage 已开启，返回 200 + 垃圾 body（仅供降级回归测试）");
+            final long ms = (System.nanoTime() - startedAt) / 1_000_000L;
+            return ResponseEntity.ok()
+                    .header("X-SHM-Source", "MockGarbage")
+                    .header("X-SHM-Elapsed-Ms", String.valueOf(ms))
+                    .body(java.util.Map.of("garbage", 1));
         }
 
         log.info("收到决策请求：runId={} floor={}/{} budget={} 候选规则={} 候选原型={} 历史={}层",
@@ -93,7 +133,7 @@ public class IntentController {
      * 客户端会把它记进决策日志的 trace，**谎报来源等于往证据链里掺假**。
      * 这与客户端"UI 显示实际发生了什么、不是配置成了什么"（踩坑 #20）是同一条线。
      */
-    private ResponseEntity<DirectorIntent> respond(DirectorIntent intent, String source, long startedAt) {
+    private ResponseEntity<?> respond(DirectorIntent intent, String source, long startedAt) {
         final long elapsedMs = (System.nanoTime() - startedAt) / 1_000_000L;
         return ResponseEntity.ok()
                 .header("X-SHM-Source", source)
