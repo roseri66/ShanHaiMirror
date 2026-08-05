@@ -115,17 +115,32 @@ class IntentCacheTest {
     // ---------------------------------------------------------------- 轮询
 
     @Test
-    @DisplayName("未攒满 3 条时不命中 —— 否则第一条会被反复命中，回到千人一句")
-    void doesNotHitUntilVariantsAreFull() {
+    @DisplayName("预热期边用边攒：有候选就能命中，但隔一次仍补充")
+    void warmsUpWhileServing() {
+        // 最初的规则是"未满 3 条一律不命中"，在真实流量下等于缓存永不生效——
+        // 一局只发 2 次决策请求，同一指纹要攒满 3 次得连打 4 局以上。
+        // 用户实测打 3 把零命中，故改成边用边攒。
         IntentRequest r = req("run", 87, 0.9, List.of("Enemy.Grunt"));
 
-        assertThat(cache.lookup(r)).isEmpty();
+        assertThat(cache.lookup(r)).as("一条候选都没有时只能走 LLM").isEmpty();
         cache.store(r, intent("第一句"));
-        assertThat(cache.lookup(r)).as("只有 1 条时不该命中").isEmpty();
-        cache.store(r, intent("第二句"));
-        assertThat(cache.lookup(r)).as("只有 2 条时不该命中").isEmpty();
-        cache.store(r, intent("第三句"));
-        assertThat(cache.lookup(r)).as("攒满 3 条后应命中").isPresent();
+
+        // 有候选之后：交替——偶数次查询走缓存，奇数次继续补充
+        assertThat(cache.lookup(r)).as("第 1 次查询（奇数）继续补充").isEmpty();
+        assertThat(cache.lookup(r)).as("第 2 次查询（偶数）应命中").isPresent();
+    }
+
+    @Test
+    @DisplayName("攒满 3 条后进入稳态，每次都命中")
+    void alwaysHitsOnceFull() {
+        IntentRequest r = req("run", 87, 0.9, List.of("Enemy.Grunt"));
+        cache.store(r, intent("一"));
+        cache.store(r, intent("二"));
+        cache.store(r, intent("三"));
+
+        for (int i = 0; i < 10; i++) {
+            assertThat(cache.lookup(r)).as("稳态下第 %d 次应命中", i + 1).isPresent();
+        }
     }
 
     @Test
@@ -171,16 +186,18 @@ class IntentCacheTest {
     @DisplayName("命中率统计正确 —— M4 的指标依赖它")
     void hitRatioIsTracked() {
         IntentRequest r = req("run", 87, 0.9, List.of("Enemy.Grunt"));
-        for (int i = 0; i < 3; i++) {
-            cache.lookup(r);              // 3 次 miss
-            cache.store(r, intent("s" + i));
-        }
+
+        // 先攒满，进入稳态
+        cache.store(r, intent("一"));
+        cache.store(r, intent("二"));
+        cache.store(r, intent("三"));
+
         for (int i = 0; i < 7; i++) {
-            Optional<DirectorIntent> hit = cache.lookup(r);   // 7 次 hit
+            Optional<DirectorIntent> hit = cache.lookup(r);
             assertThat(hit).isPresent();
         }
         assertThat(cache.hitCount()).isEqualTo(7);
-        assertThat(cache.missCount()).isEqualTo(3);
-        assertThat(cache.hitRatio()).isEqualTo(0.7);
+        assertThat(cache.missCount()).isZero();
+        assertThat(cache.hitRatio()).isEqualTo(1.0);
     }
 }
