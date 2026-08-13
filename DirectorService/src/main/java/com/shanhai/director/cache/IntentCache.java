@@ -1,6 +1,5 @@
 package com.shanhai.director.cache;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -55,17 +54,23 @@ public class IntentCache {
 
     private static final Logger log = LoggerFactory.getLogger(IntentCache.class);
 
-    /** 同一指纹保留几条候选。**拍的值**，待回流数据校准。 */
-    public static final int MAX_VARIANTS = 3;
+    /**
+     * 同一指纹保留几条候选。**拍的值**，待回流数据校准。
+     *
+     * <p>M5 起真源在 {@link FingerprintScheme#DEFAULT_MAX_VARIANTS}，这里只是转发——
+     * 保留这个常量是因为既有测试引用了它，而改测试不属于本次范围。
+     */
+    public static final int MAX_VARIANTS = FingerprintScheme.DEFAULT_MAX_VARIANTS;
 
-    /** 五维画像的分桶宽度（分）。**拍的值**，待回流数据校准。 */
-    private static final int PROFILE_BUCKET = 20;
-
-    /** 画像里参与指纹的五个维度。**不含 resourceSurplus**——它恒为 50，
-     *  无数据源（D-09），入 key 只是给每条指纹加一个常量后缀，纯浪费。 */
-    private static final List<String> PROFILE_DIMENSIONS = List.of(
-            "buildConcentration", "combatEfficiency",
-            "strategySwitch", "survivalPressure");
+    /**
+     * 线上正在用的指纹方案。
+     *
+     * <p>M5（决策 D-24）把「算指纹」从本类抽到了 {@link FingerprintScheme}，
+     * 因为离线模拟器要用**同一份算法**跑不同的参数组合——各写一份必然漂移，
+     * 而一旦漂移，模拟出来的命中率就和真实的不可比，那套东西也就失去了全部意义。
+     * **本类的行为一字未改**，既有的缓存测试就是这条的守卫。
+     */
+    private static final FingerprintScheme SCHEME = FingerprintScheme.CURRENT;
 
     private final IntentCacheStore store;
 
@@ -169,97 +174,6 @@ public class IntentCache {
      * 只会表现为"命中率异常低"或"不该命中的命中了"，两者都极难在运行中发现。
      */
     String fingerprint(IntentRequest req) {
-        StringBuilder sb = new StringBuilder();
-
-        sb.append("f=").append(orZero(req.floorIndex()));
-        sb.append("|b=").append(orZero(req.challengeBudget()));
-
-        Map<String, Object> profile = req.profile();
-        for (String dim : PROFILE_DIMENSIONS) {
-            sb.append('|').append(dim, 0, 2).append('=').append(bucket(num(profile, dim)));
-        }
-        sb.append("|c=").append(confidenceTier(num(profile, "confidence")));
-        sb.append("|a=").append(str(profile, "dominantArchetype"));
-
-        // 集合语义：排序后拼接。不排序的话同一组候选换个顺序就是另一条指纹，
-        // 命中率会莫名其妙地低，而且极难发现原因。
-        sb.append("|r=").append(sortedJoin(ruleKeys(req)));
-        sb.append("|e=").append(sortedJoin(req.availableArchetypes()));
-
-        // 历史只取规则 tag：Fairness 只关心"这条规则用过没有"。
-        // 带上层号的话每层都是新指纹，等于缓存失效。
-        sb.append("|h=").append(sortedJoin(historyTags(req)));
-
-        return sb.toString();
-    }
-
-    private static List<String> ruleKeys(IntentRequest req) {
-        List<String> out = new ArrayList<>();
-        if (req.availableRules() != null) {
-            for (IntentRequest.AvailableRule r : req.availableRules()) {
-                out.add(r.tag() + ":" + r.level());
-            }
-        }
-        return out;
-    }
-
-    private static List<String> historyTags(IntentRequest req) {
-        List<String> out = new ArrayList<>();
-        if (req.decisionHistory() != null) {
-            for (IntentRequest.HistoryEntry e : req.decisionHistory()) {
-                if (e.ruleTags() != null) {
-                    out.addAll(e.ruleTags());
-                }
-            }
-        }
-        return out;
-    }
-
-    private static String sortedJoin(List<String> items) {
-        if (items == null || items.isEmpty()) {
-            return "-";
-        }
-        List<String> copy = new ArrayList<>(items);
-        copy.sort(String::compareTo);
-        return String.join(",", copy);
-    }
-
-    /** 五维分桶：0-19 → 0，20-39 → 1，… 87 和 85 落进同一桶。 */
-    private static int bucket(double v) {
-        return (int) (Math.max(0, Math.min(100, v)) / PROFILE_BUCKET);
-    }
-
-    /**
-     * 置信度三档。
-     *
-     * <p>护栏只在 0.6 处有阈值行为（低置信度禁重度规则），
-     * 分得比这更细是假精度——0.71 和 0.79 对决策没有任何区别，
-     * 却会让它们落进不同的缓存槽。
-     */
-    private static String confidenceTier(double c) {
-        if (c < 0.6) {
-            return "lo";
-        }
-        return c <= 0.8 ? "mid" : "hi";
-    }
-
-    private static int orZero(Integer v) {
-        return v == null ? 0 : v;
-    }
-
-    private static double num(Map<String, Object> m, String key) {
-        if (m == null) {
-            return 0.0;
-        }
-        Object v = m.get(key);
-        return v instanceof Number n ? n.doubleValue() : 0.0;
-    }
-
-    private static String str(Map<String, Object> m, String key) {
-        if (m == null) {
-            return "-";
-        }
-        Object v = m.get(key);
-        return v instanceof String s && !s.isBlank() ? s : "-";
+        return SCHEME.compute(FingerprintInput.from(req));
     }
 }
