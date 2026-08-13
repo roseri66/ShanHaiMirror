@@ -252,6 +252,89 @@ class CacheSimulatorTest {
         assertThat(r.trace()).isEmpty();
     }
 
+    /**
+     * ⭐⭐ 重放保真度自检必须能抓到「历史中缓存被清空过」。
+     *
+     * <h2>这条用例的由来</h2>
+     *
+     * M5-5 拿 32 条真实流水跑分析时发现：模拟 CURRENT 得出 28.1% 命中，
+     * <b>而数据库里记着的真实命中率是 18.8%</b> —— 而正确性锚点说这两个应该相等。
+     *
+     * <p>根因是模拟器有一个<b>没写在纸面上的前提</b>：缓存状态连续演进。
+     * 而缓存是进程内内存，<b>服务一重启就清空</b>，重放并不知道这件事。
+     *
+     * <p>⚠️ <b>为什么原来的正确性锚点没抓到</b>：那条用例的序列是一气呵成的，
+     * <b>从来没有「中途清空」。一个前提只有在被违反时才显出来，而单测里的世界太干净了。</b>
+     *
+     * <p>所以这条用例<b>刻意把重启造出来</b>：同一条指纹先攒满、再让它记成 MISS_EMPTY。
+     */
+    @Test
+    @DisplayName("⭐ 历史里有过缓存清空（服务重启）时，重放保真度自检必须报警")
+    void fidelityCheck_detectsCacheClearedMidHistory() {
+        IntentRequest req = request("r1", 1, 30, 87);
+        String fp = FingerprintScheme.CURRENT.compute(FingerprintInput.from(req));
+        Instant t = Instant.parse("2026-08-14T00:00:00Z");
+
+        List<IntentRecord> history = new ArrayList<>();
+        // 先攒满并命中若干次（正常演进）
+        history.add(rec(req, fp, CacheOutcome.MISS_EMPTY, 0, "Llm", t));
+        history.add(rec(req, fp, CacheOutcome.MISS_WARMUP, 1, "Llm", t.plusSeconds(1)));
+        history.add(rec(req, fp, CacheOutcome.HIT, 2, "Cache", t.plusSeconds(2)));
+        history.add(rec(req, fp, CacheOutcome.HIT, 2, "Cache", t.plusSeconds(3)));
+        // ⭐ 这里发生了一次服务重启：同一条指纹又变回「从没见过」
+        history.add(rec(req, fp, CacheOutcome.MISS_EMPTY, 0, "Llm", t.plusSeconds(4)));
+
+        CacheSimulator.SchemeResult current =
+                simulator.simulate(history, List.of(FingerprintScheme.CURRENT)).get(0);
+        CacheSimulator.ReplayFidelity fidelity = simulator.checkFidelity(history, current);
+
+        assertThat(fidelity.cacheClearedSignals())
+                .as("「该指纹之前出现过却记为从没见过」是缓存被清空的签名，必须被识别出来")
+                .isEqualTo(1);
+        assertThat(fidelity.faithful())
+                .as("重放偏乐观时必须判为不忠实——否则报告里的绝对值会被当真")
+                .isFalse();
+        assertThat(fidelity.warning())
+                .isNotNull()
+                .contains("重启")
+                .contains("偏乐观");
+        assertThat(fidelity.algorithmDrift())
+                .as("本例的指纹是用当前算法算的，不该被误报成「算法变过」——两个原因必须能分开")
+                .isZero();
+        assertThat(fidelity.mismatches())
+                .as("⭐ 判据是逐条比对：本例中模拟与实测的命中总数恰好相等（都是 2 次），"
+                        + "但命中发生在不同的位置上——只比总数会给出假的「一致」")
+                .isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("历史连续演进时，重放保真度自检应判为忠实且不报警")
+    void fidelityCheck_silentOnFaithfulReplay() {
+        IntentRequest req = request("r1", 1, 30, 87);
+        String fp = FingerprintScheme.CURRENT.compute(FingerprintInput.from(req));
+        Instant t = Instant.parse("2026-08-14T00:00:00Z");
+
+        List<IntentRecord> history = List.of(
+                rec(req, fp, CacheOutcome.MISS_EMPTY, 0, "Llm", t),
+                rec(req, fp, CacheOutcome.MISS_WARMUP, 1, "Llm", t.plusSeconds(1)),
+                rec(req, fp, CacheOutcome.HIT, 2, "Cache", t.plusSeconds(2)));
+
+        CacheSimulator.SchemeResult current =
+                simulator.simulate(history, List.of(FingerprintScheme.CURRENT)).get(0);
+        CacheSimulator.ReplayFidelity fidelity = simulator.checkFidelity(history, current);
+
+        assertThat(fidelity.cacheClearedSignals()).isZero();
+        assertThat(fidelity.mismatches()).isZero();
+        assertThat(fidelity.algorithmDrift()).isZero();
+        assertThat(fidelity.faithful()).isTrue();
+        assertThat(fidelity.warning()).isNull();
+    }
+
+    private static IntentRecord rec(IntentRequest req, String fp, CacheOutcome outcome,
+                                    int variantCount, String source, Instant at) {
+        return IntentRecord.of(req, fp, outcome, variantCount, source, 200, 100L, at);
+    }
+
     // ── 测试数据 ──
 
     private static IntentRecord record(IntentRequest req, String source) {

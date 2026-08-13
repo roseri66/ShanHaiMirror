@@ -197,6 +197,128 @@ public class CacheSimulator {
             boolean trivial) {
     }
 
+    /**
+     * ⭐ 重放保真度自检：模拟出来的历史，和数据库里真实记着的历史，对不对得上。
+     *
+     * <h2>为什么必须有这个</h2>
+     *
+     * 模拟器有一个<b>没写在纸面上的前提</b>：缓存状态是<b>连续演进</b>的。
+     * 而这个前提在真实历史上会被打破 —— <b>缓存是进程内的内存，服务一重启就清空</b>，
+     * 但重放并不知道中间发生过重启，于是它「记得」重启前攒的候选，<b>结果偏乐观</b>。
+     *
+     * <p>这是实测发现的：32 条真实流水上，模拟 CURRENT 得出 28.1% 命中，
+     * <b>而数据库里记着的真实命中率是 18.8%</b>。差的 3 次，
+     * 精确对应三条「该指纹之前出现过、本次却记成 {@code MISS_EMPTY}」的记录 ——
+     * <b>那正是缓存被清空的签名。</b>
+     *
+     * <p>⚠️ <b>单元测试里的正确性锚点抓不到这个</b>，因为那段序列从来没有「中途清空」。
+     * <b>一个前提只有在被违反时才显出来，而单测里的世界太干净了。</b>
+     *
+     * <h2>所以它不修模拟器，它让报告自己说话</h2>
+     *
+     * 重启无法避免（开发期天天重启）。<b>能做也该做的是：让人知道什么时候不能信这个数字。</b>
+     * 这与本项目「样本量不足时报告自带警告」是同一条思路 ——
+     * <b>一个不说明自身局限的分析结果，和拍脑袋没有区别。</b>
+     */
+    public ReplayFidelity checkFidelity(List<IntentRecord> records, SchemeResult currentResult) {
+        if (records.isEmpty()) {
+            return new ReplayFidelity(0.0, 0.0, 0, 0, 0, true, null);
+        }
+
+        long observedHits = records.stream().filter(r -> r.cacheOutcome().isHit()).count();
+        double observedHitRate = (double) observedHits / records.size();
+
+        // 「该指纹之前出现过，本次却记成 MISS_EMPTY」= 缓存被清空过
+        Set<String> seen = new HashSet<>();
+        int clearedSignals = 0;
+        for (IntentRecord r : records) {
+            if (r.cacheOutcome() == CacheOutcome.MISS_EMPTY && seen.contains(r.fingerprint())) {
+                clearedSignals++;
+            }
+            seen.add(r.fingerprint());
+        }
+
+        // ⭐ 逐条比对，而不是只比总命中率。
+        //    只比总数会在「两串序列不同、但命中次数恰好相等」时给出假的「一致」——
+        //    写这条自检的第一版就是那么做的，而它自己的单元测试当场造出了这个巧合：
+        //    5 条记录里模拟和实测都是 2 次命中，但命中发生在不同的位置上。
+        //    **一个会因为巧合而通过的校验，比没有校验更危险。**
+        List<CacheOutcome> trace = currentResult.trace();
+        int mismatches = 0;
+        for (int i = 0; i < Math.min(trace.size(), records.size()); i++) {
+            if (trace.get(i) != records.get(i).cacheOutcome()) {
+                mismatches++;
+            }
+        }
+        // ⭐ 第二种失真原因：**指纹算法本身变过**。
+        //    表里存的 fingerprint 是**当时那套算法**算出来的；
+        //    用今天的 CURRENT 重算同一份 input，若结果不同，说明算法在这批数据之后被改过。
+        //    这正是当初「同时存 fingerprint 而不只存原始字段」的用处 ——
+        //    设计时写的是「它是模拟器唯一的正确性锚点」，这里就是那个锚点在发挥作用。
+        int algorithmDrift = 0;
+        for (IntentRecord r : records) {
+            if (!FingerprintScheme.CURRENT.compute(r.input()).equals(r.fingerprint())) {
+                algorithmDrift++;
+            }
+        }
+
+        boolean faithful = mismatches == 0;
+
+        String warning = null;
+        if (!faithful) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(String.format(
+                    "⚠️ 重放与真实历史对不上：%d 条里有 %d 条的结局不一致"
+                            + "（模拟 CURRENT 命中率 %.1f%%，数据库里记的是 %.1f%%）。",
+                    records.size(), mismatches,
+                    currentResult.hitRate() * 100, observedHitRate * 100));
+
+            // 两个原因分开说 —— 它们的应对完全不同，混在一起就等于都说不清
+            if (algorithmDrift > 0) {
+                sb.append(String.format(
+                        "【原因一·指纹算法变过】%d 条记录用今天的算法重算，"
+                                + "与当时存下来的指纹不同。**这批历史是用旧算法记录的**，"
+                                + "重放必然对不上 —— 这不是缺陷，是改算法的必然代价。"
+                                + "⭐ 想拿到可信的绝对值，需要在算法改动之后**重新采集数据**。",
+                        algorithmDrift));
+            }
+            if (clearedSignals > 0) {
+                sb.append(String.format(
+                        "【原因二·缓存被清空】检测到 %d 处「该指纹之前出现过却记为从没见过」，"
+                                + "最可能是期间**重启过服务**"
+                                + "（缓存是进程内内存，重启即清空，而重放不知道这件事）。",
+                        clearedSignals));
+            }
+            sb.append("⭐ 因此下面所有方案的命中率都**偏乐观**，"
+                    + "只可用于方案之间的横向比较，不可当作绝对值。");
+            warning = sb.toString();
+        }
+        return new ReplayFidelity(currentResult.hitRate(), observedHitRate,
+                mismatches, clearedSignals, algorithmDrift, faithful, warning);
+    }
+
+    /**
+     * 重放保真度。
+     *
+     * @param simulatedHitRate CURRENT 方案重放出来的命中率
+     * @param observedHitRate  数据库里真实记着的命中率
+     * @param mismatches       ⭐ **逐条比对**下结局不一致的条数（这才是判据，不是命中率之差）
+     * @param cacheClearedSignals 检测到几处「缓存被清空」的签名（多半是重启过服务）
+     * @param algorithmDrift   ⭐ 有几条记录**当时存下的指纹**与**用今天算法重算的结果**不同
+     *                         —— 说明指纹算法在这批数据之后被改过，重放必然对不上
+     * @param faithful         重放是否忠实（忠实才能把命中率当绝对值看）
+     * @param warning          不忠实时的说明，忠实时为 null
+     */
+    public record ReplayFidelity(
+            double simulatedHitRate,
+            double observedHitRate,
+            int mismatches,
+            int cacheClearedSignals,
+            int algorithmDrift,
+            boolean faithful,
+            String warning) {
+    }
+
     private int countDistinct(List<IntentRecord> records, FingerprintScheme scheme) {
         Set<String> seen = new HashSet<>();
         for (IntentRecord r : records) {

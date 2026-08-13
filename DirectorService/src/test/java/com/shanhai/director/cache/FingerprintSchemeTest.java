@@ -128,6 +128,63 @@ class FingerprintSchemeTest {
         assertThat(scheme.compute(FingerprintInput.from(sample()))).contains("b=30");
     }
 
+    /**
+     * ⭐⭐ 满分 100 不能自成一桶。
+     *
+     * <h2>这条用例的由来</h2>
+     *
+     * 原实现是 {@code (int)(v / width)}，而 <b>100 是闭区间的上界</b> ——
+     * {@code 100/20 = 5} 而 {@code 96.8/20 = 4}，于是<b>两个只差 3.2 分的画像
+     * 被当成了两种玩家</b>，恰恰违背分桶的初衷。
+     *
+     * <p><b>影响远超预期</b>：M5-5 的 32 条真实流水里 {@code buildConcentration == 100}
+     * 的占 26 条（81%）—— 因为「专精单一 Build」算出来就是满分。
+     *
+     * <p>⚠️ <b>它不是看代码看出来的</b>，是顺着「桶宽 34 的命中率反而比 50 和 100 高」
+     * 这个反常现象查出来的。<b>一个不符合直觉的数据点，比一百个符合直觉的更值得追。</b>
+     */
+    @Test
+    @DisplayName("⭐ 满分 100 与接近满分的画像必须落在同一个桶里")
+    void maxScore_doesNotGetItsOwnBucket() {
+        FingerprintInput full = FingerprintInput.from(sampleWithBuildConcentration(100));
+        FingerprintInput near = FingerprintInput.from(sampleWithBuildConcentration(96.8));
+
+        assertThat(FingerprintScheme.CURRENT.compute(full))
+                .as("100 与 96.8 只差 3.2 分，桶宽 20 下必须算同一类玩家")
+                .isEqualTo(FingerprintScheme.CURRENT.compute(near));
+    }
+
+    /**
+     * 加宽桶宽必须是<b>单调</b>的：桶越宽，产生的桶只会更少或持平，绝不会更多。
+     *
+     * <p>这条守的是缺陷的根源。原实现在桶宽 50 时把 100 分到桶 2、94.8 分到桶 1，
+     * <b>而桶宽 34 时两者都在桶 2</b> —— 加宽反而切得更碎，这在逻辑上是不可能的。
+     */
+    @Test
+    @DisplayName("桶宽越大，分出来的桶编号不会反而变多（单调性）")
+    void widerBucket_isMonotonic() {
+        double[] samples = {0, 60, 64.8, 86.4, 94.8, 96.8, 100};
+        int[] widths = {10, 20, 34, 50, 100};
+
+        for (int i = 1; i < widths.length; i++) {
+            java.util.Set<String> narrow = distinctBuckets(samples, widths[i - 1]);
+            java.util.Set<String> wide = distinctBuckets(samples, widths[i]);
+            assertThat(wide.size())
+                    .as("桶宽 %d → %d：桶数不该增加（实得 %d → %d）",
+                            widths[i - 1], widths[i], narrow.size(), wide.size())
+                    .isLessThanOrEqualTo(narrow.size());
+        }
+    }
+
+    private static java.util.Set<String> distinctBuckets(double[] samples, int width) {
+        FingerprintScheme scheme = FingerprintScheme.CURRENT.withBucket(width);
+        java.util.Set<String> out = new java.util.HashSet<>();
+        for (double v : samples) {
+            out.add(scheme.compute(FingerprintInput.from(sampleWithBuildConcentration(v))));
+        }
+        return out;
+    }
+
     // ── 测试数据 ──
 
     private static IntentRequest sample() {

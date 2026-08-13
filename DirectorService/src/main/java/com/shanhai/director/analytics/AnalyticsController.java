@@ -196,6 +196,11 @@ public class AnalyticsController {
         if (warning != null) {
             body.put("sampleWarning", warning);
         }
+        // ⭐ 重放保真度自检放在结果**前面**：
+        //    如果重放本身就不忠实于历史，下面那张表的绝对值就不能信，
+        //    读的人必须先看到这句话，而不是先看到一堆诱人的百分比。
+        CacheSimulator.ReplayFidelity fidelity = simulator.checkFidelity(records, current);
+        body.put("replayFidelity", fidelity);
         body.put("results", rows);
         body.put("note", "hitRate 是在历史请求上按时间顺序重放得出的模拟值，不是真实观测值。"
                 + "重放假设『原本走 Llm/Cache 的请求，LLM 当时可用且会成功』——"

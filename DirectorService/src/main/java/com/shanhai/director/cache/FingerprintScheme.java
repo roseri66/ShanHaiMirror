@@ -179,8 +179,38 @@ public record FingerprintScheme(
         sb.append(key).append('=').append(value);
     }
 
+    /**
+     * 画像分桶。把 {@code [0, 100]} 切成等宽的若干桶。
+     *
+     * <h2>⚠️ 这里修过一个缺陷：满分 100 曾经自成一桶</h2>
+     *
+     * 原实现是 {@code (int)(v / width)}。问题在于 <b>100 是闭区间的上界</b>，
+     * 而 {@code 100 / width} 总是比 {@code 99.9 / width} 多一档 ——
+     * 于是<b>「满分」永远单独占一个只装它自己的桶</b>。
+     *
+     * <p>桶宽 20 时：{@code 96.8 → 4}，而 {@code 100 → 5}。
+     * 两个只差 3.2 分的画像被当成了两种玩家 —— 这恰恰违背了分桶的初衷
+     * （「87 分和 85 分不该算两种玩家」）。
+     *
+     * <p><b>它的实际影响远超预期</b>：M5-5 的 32 条真实流水里，
+     * {@code buildConcentration} 等于 100 的有 <b>26 条（81%）</b> ——
+     * 因为「专精单一 Build」的玩家算出来就是满分。<b>这个缺陷几乎每次都命中。</b>
+     *
+     * <h2>它是怎么被发现的</h2>
+     *
+     * 不是看代码看出来的，是<b>顺着一个反常现象查出来的</b>：
+     * 模拟显示<b>桶宽 34 的命中率反而比桶宽 50 和 100 高</b>。
+     * 「桶越宽合并越多」是常识，反过来就说明分桶本身有问题 ——
+     * 桶宽 34 恰好让 100 和 86~97 落进同一桶，而 50 / 100 又把它分了出去。
+     *
+     * <p><b>一个不符合直觉的数据点，比一百个符合直觉的更值得追。</b>
+     */
     private int bucket(double v) {
-        return (int) (Math.max(0, Math.min(100, v)) / profileBucket);
+        double clamped = Math.max(0, Math.min(100, v));
+        int raw = (int) (clamped / profileBucket);
+        // 最后一桶是闭区间：把 100 并进 [maxBucket*width, 100]，而不是让它自成一桶
+        int maxBucket = (100 - 1) / profileBucket;
+        return Math.min(raw, maxBucket);
     }
 
     /**
