@@ -114,38 +114,23 @@ public class IntentCache {
         String fp = fingerprint(request);
         List<DirectorIntent> variants = store.get(fp);
 
-        // 一条都没有：只能走 LLM。
-        if (variants.isEmpty()) {
-            misses.incrementAndGet();
-            log.debug("缓存未命中（无候选），走 LLM。指纹={}", fp);
-            return new LookupResult(Optional.empty(), CacheOutcome.MISS_EMPTY, fp, 0);
-        }
+        // ⭐ 判定规则本身在 CachePolicy 里，本类只负责「状态存在哪」。
+        //    离线模拟器（M5）用同一个 CachePolicy 配自己的内存状态重放历史 ——
+        //    规则只有一份，就不存在漂移。
+        CacheOutcome outcome = CachePolicy.decide(variants.size(), MAX_VARIANTS,
+                () -> lookupCounts.computeIfAbsent(fp, k -> new AtomicLong()).incrementAndGet());
 
-        // 已攒满：稳态，随机取一条。
-        if (variants.size() >= MAX_VARIANTS) {
-            return new LookupResult(hit(variants, fp), CacheOutcome.HIT, fp, variants.size());
-        }
-
-        // ★ 预热期：**边用边攒**，隔一次去 LLM 补一条。
-        //
-        // 最初的规则是"未满 3 条一律不命中"，在真实流量下等于缓存永不生效：
-        // 一局只发 2 次决策请求（共 3 层，F0 是观察层不走 Provider），
-        // 而 F1/F2 的预算不同、天然是两条指纹——同一条指纹要攒满 3 次，
-        // 得连打 4 局以上，且期间画像分桶不能漂。
-        // 用户实测打了 3 把，**一次都没命中**。
-        //
-        // 现在改成：有候选就能用，但未满时隔一次仍走 LLM 补充。
-        // 代价是预热期内同一句台词会重复出现一两次；
-        // 收益是从第 2 次请求起就开始省钱，而且最终仍收敛到 3 条。
-        // 这个取舍是明的：**一个永远不命中的缓存，比偶尔重复一句台词糟得多。**
-        long n = lookupCounts.computeIfAbsent(fp, k -> new AtomicLong()).incrementAndGet();
-        if (n % 2 == 0) {
-            return new LookupResult(hit(variants, fp), CacheOutcome.HIT, fp, variants.size());
+        if (outcome.isHit()) {
+            return new LookupResult(hit(variants, fp), outcome, fp, variants.size());
         }
 
         misses.incrementAndGet();
-        log.debug("预热期主动补充候选（{}/{}），走 LLM。指纹={}", variants.size(), MAX_VARIANTS, fp);
-        return new LookupResult(Optional.empty(), CacheOutcome.MISS_WARMUP, fp, variants.size());
+        if (outcome == CacheOutcome.MISS_EMPTY) {
+            log.debug("缓存未命中（无候选），走 LLM。指纹={}", fp);
+        } else {
+            log.debug("预热期主动补充候选（{}/{}），走 LLM。指纹={}", variants.size(), MAX_VARIANTS, fp);
+        }
+        return new LookupResult(Optional.empty(), outcome, fp, variants.size());
     }
 
     /**
