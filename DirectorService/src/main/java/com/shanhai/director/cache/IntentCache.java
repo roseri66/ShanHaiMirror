@@ -98,6 +98,19 @@ public class IntentCache {
      * @return 命中时返回随机一条候选；未命中或候选未满 3 条时返回 empty（调用方应走 LLM）
      */
     public Optional<DirectorIntent> lookup(IntentRequest request) {
+        return lookupDetailed(request).intent();
+    }
+
+    /**
+     * 查缓存，并连同「为什么是这个结果」一起返回。
+     *
+     * <p>M5（决策 D-24）加的。{@link #lookup} 只回答「有没有」，
+     * 而落库要记的是「**为什么**没有」—— 指纹从没见过（切太碎）和候选还没攒满（正在预热）
+     * 是两件完全不同的事，混成一个「未命中」就无法区分「方案有问题」和「还在预热」。
+     *
+     * <p><b>既有逻辑一行未改</b>：{@link #lookup} 现在只是丢掉了这里多出来的那部分信息。
+     */
+    public LookupResult lookupDetailed(IntentRequest request) {
         String fp = fingerprint(request);
         List<DirectorIntent> variants = store.get(fp);
 
@@ -105,12 +118,12 @@ public class IntentCache {
         if (variants.isEmpty()) {
             misses.incrementAndGet();
             log.debug("缓存未命中（无候选），走 LLM。指纹={}", fp);
-            return Optional.empty();
+            return new LookupResult(Optional.empty(), CacheOutcome.MISS_EMPTY, fp, 0);
         }
 
         // 已攒满：稳态，随机取一条。
         if (variants.size() >= MAX_VARIANTS) {
-            return hit(variants, fp);
+            return new LookupResult(hit(variants, fp), CacheOutcome.HIT, fp, variants.size());
         }
 
         // ★ 预热期：**边用边攒**，隔一次去 LLM 补一条。
@@ -127,12 +140,28 @@ public class IntentCache {
         // 这个取舍是明的：**一个永远不命中的缓存，比偶尔重复一句台词糟得多。**
         long n = lookupCounts.computeIfAbsent(fp, k -> new AtomicLong()).incrementAndGet();
         if (n % 2 == 0) {
-            return hit(variants, fp);
+            return new LookupResult(hit(variants, fp), CacheOutcome.HIT, fp, variants.size());
         }
 
         misses.incrementAndGet();
         log.debug("预热期主动补充候选（{}/{}），走 LLM。指纹={}", variants.size(), MAX_VARIANTS, fp);
-        return Optional.empty();
+        return new LookupResult(Optional.empty(), CacheOutcome.MISS_WARMUP, fp, variants.size());
+    }
+
+    /**
+     * 一次缓存查询的完整结果。
+     *
+     * @param intent       命中时的候选，未命中为 empty
+     * @param outcome      为什么是这个结果，见 {@link CacheOutcome}
+     * @param fingerprint  本次算出来的指纹。**顺带返回是为了让调用方不必再算一遍** ——
+     *                     指纹计算不便宜（要排序拼接三个集合），而落库正好也要它
+     * @param variantCount 查询发生时该指纹下已有几条候选
+     */
+    public record LookupResult(
+            Optional<DirectorIntent> intent,
+            CacheOutcome outcome,
+            String fingerprint,
+            int variantCount) {
     }
 
     private Optional<DirectorIntent> hit(List<DirectorIntent> variants, String fp) {

@@ -33,6 +33,44 @@ spring:
       fail-on-unknown-properties: false
     default-property-inclusion: non_null
 
+  # ── M5（决策 D-24）落库 ──
+  #
+  # ⭐ 硬约束①：**MySQL 连不上时，服务端必须照常返回决策，只是不落库。**
+  #    落库是尽力而为的旁路 —— 让证据的采集反过来伤害被观测的系统，是本末倒置。
+  #    实现它靠两条：
+  #      · initialization-fail-timeout: -1 → 启动时不去建连接，连不上也不阻止启动
+  #      · sql.init.mode: never            → ⭐ 建表**不能**走 Spring 自带的初始化器
+  #
+  #    ⚠️ 第二条是踩出来的：`spring.sql.init.mode=always` 会让
+  #       dataSourceScriptDatabaseInitializer 成为启动期硬依赖，连不上就整个上下文加载失败。
+  #       `continue-on-error` 救不了 —— 它只兜「脚本执行出错」，兜不住「拿不到连接」。
+  #       建表改由 DatabaseBootstrap 在 ApplicationReadyEvent 里做，它自己兜异常。
+  #
+  #    ⚠️ 「静默降级」同样不可接受：DatabaseBootstrap 探测失败会打一条醒目的方框 WARN。
+  #       静默降级会让「没落库」和「落了但查不到」无法区分，而两者的排查方向完全相反。
+  datasource:
+    # allowPublicKeyRetrieval=true 是 MySQL 8 的 caching_sha2_password 在非 SSL 连接下所必需。
+    # ⚠️ 它允许客户端通过未加密通道索取服务端公钥，理论上可被中间人利用 ——
+    #    本服务**只在本机跑、不部署公网**（D-23 已记：一个 502 的 Demo 比没有 Demo 更糟），
+    #    这个取舍在这里成立；**若哪天真要连远端库，必须改用 SSL 并去掉这个参数。**
+    url: ${SHM_DB_URL:jdbc:mysql://localhost:3306/shm_director?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=utf8}
+    username: ${SHM_DB_USER:root}
+    password: ${SHM_DB_PASSWORD:root}
+    hikari:
+      # -1 = 启动时不做连接测试。连不上就等真正用到时再失败（那时由 recorder 兜住）
+      initialization-fail-timeout: -1
+      # 决策请求是低频事件（一局 2 次），落库是单线程消费者。池子不需要大。
+      maximum-pool-size: 4
+      minimum-idle: 1
+      # ⚠️ 必须小于 MySQL 的 wait_timeout（默认 8 小时），否则会拿到已被服务端关掉的死连接
+      max-lifetime: 1800000
+
+  sql:
+    init:
+      # ⭐ never —— 建表由 DatabaseBootstrap 负责，理由见上面 datasource 的注释。
+      #    别改回 always：那会让「连不上数据库」变成「服务起不来」。
+      mode: never
+
 logging:
   level:
     com.shanhai.director: INFO

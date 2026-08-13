@@ -103,16 +103,40 @@
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
+        <!-- M5（D-24）落库。
+             刻意用 JdbcTemplate 而不是 JPA / MyBatis：
+             本服务只有「插入 + 几个聚合查询」，引一整套 ORM 的抽象收益抵不过它的复杂度。
+             SQL 全手写、全可见，这与本项目「优先简单稳定」是一致的。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
 
-        <!-- M0 只要能起、能返回固定 Intent。
-             WebClient / Resilience4j / Bucket4j / Redis / MySQL / Micrometer
-             都留到各自的里程碑再加 —— 一次性把依赖堆齐，
-             等于让 pom 描述一个还不存在的系统。 -->
+        <!-- 集成测试起真 MySQL。
+             不用 H2：索引有没有生效、JSON 列的行为、DATETIME(3) 的精度，
+             用 H2 测出来的只是「我以为 MySQL 是这样」。
+             版本由 spring-boot-dependencies 管（Boot 3.1+ 收录了 testcontainers-bom）。 -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>mysql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -131,6 +155,28 @@
                     <compilerArgs>
                         <arg>-Xlint:all</arg>
                     </compilerArgs>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <!--
+                            ⚠️ 不设这个，Testcontainers 内置的 docker-java 会按 Docker API 1.32 发请求，
+                            而新版 Docker Engine（本机 29.x，最低 1.40）直接返回 400。
+                            Testcontainers 把这个 400 理解成「本机没有 Docker」，
+                            于是把集成测试**静默跳过，而构建仍然是 BUILD SUCCESS**。
+
+                            这是从另一个项目（MetaPool）搬过来的解法，那边记为坑 P-22。
+                            取 1.40 是因为它同时是新引擎的下限、又在老引擎（19.03+）的支持范围内，
+                            两头兼容；钉 1.44 之类更高的值会在 Docker 24 及更早的 CI runner 上反过来挂掉。
+
+                            ⭐ 跳过不等于通过，而构建输出里两者都是绿的。
+                        -->
+                        <api.version>1.40</api.version>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
         </plugins>
