@@ -90,7 +90,7 @@ class IntentRecorderTest {
                 // 分开提交，保证是三个不同的批次
                 Thread.sleep(300);
             }
-            assertThat(recorder.awaitDrained(3000)).isTrue();
+            assertThat(recorder.awaitProcessed(3000)).isTrue();
 
             assertThat(repo.attempts())
                     .as("消费线程必须活过前两次异常，第三批仍要被尝试")
@@ -112,7 +112,7 @@ class IntentRecorderTest {
             for (int i = 0; i < 5; i++) {
                 recorder.record(sampleRecord(Instant.now()));
             }
-            assertThat(recorder.awaitDrained(3000)).isTrue();
+            assertThat(recorder.awaitProcessed(3000)).isTrue();
 
             assertThat(repo.total()).isEqualTo(5);
             assertThat(recorder.recordedCount()).isEqualTo(5);
@@ -143,7 +143,7 @@ class IntentRecorderTest {
         recorder.start();
         try {
             recorder.record(sampleRecord(Instant.now()));
-            assertThat(recorder.awaitDrained(3000)).isTrue();
+            assertThat(recorder.awaitProcessed(3000)).isTrue();
 
             assertThat(bootstrap.markedUnavailable())
                     .as("拿不到连接必须让后续的 record() 直接丢弃，而不是继续入队白等")
@@ -167,7 +167,7 @@ class IntentRecorderTest {
         recorder.start();
         try {
             recorder.record(sampleRecord(Instant.now()));
-            assertThat(recorder.awaitDrained(3000)).isTrue();
+            assertThat(recorder.awaitProcessed(3000)).isTrue();
 
             assertThat(bootstrap.markedUnavailable())
                     .as("IllegalStateException 不是连接问题，不该让整个落库停掉")

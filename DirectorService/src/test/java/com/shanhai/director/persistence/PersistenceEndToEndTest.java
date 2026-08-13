@@ -72,7 +72,13 @@ class PersistenceEndToEndTest {
     private JdbcTemplate jdbc;
 
     @BeforeEach
-    void cleanTable() {
+    void cleanTable() throws InterruptedException {
+        // ⚠️ 先等排空再清表。
+        // recorder 是被缓存的 Spring 上下文里的单例，跨用例复用；
+        // 上一个用例的在途记录若在 TRUNCATE 之后才落地，就会污染下一个用例的计数。
+        // 这类污染取决于 JUnit 的方法执行顺序，是最难查的一类
+        // （本项目在 examples 那边踩过同源的坑）。
+        recorder.awaitProcessed(5000);
         jdbc.execute("TRUNCATE TABLE intent_request");
     }
 
@@ -86,7 +92,7 @@ class PersistenceEndToEndTest {
                         .content(requestJson("run-e2e", 1, 30)))
                 .andExpect(status().isOk());
 
-        assertThat(recorder.awaitDrained(5000)).isTrue();
+        assertThat(recorder.awaitProcessed(5000)).isTrue();
 
         List<IntentRecord> rows = repository.findBetweenOrderByTime(before, Instant.now().plusSeconds(5));
         assertThat(rows).hasSize(1);
@@ -141,7 +147,7 @@ class PersistenceEndToEndTest {
                     .andExpect(status().isOk());
         }
 
-        assertThat(recorder.awaitDrained(5000)).isTrue();
+        assertThat(recorder.awaitProcessed(5000)).isTrue();
 
         List<IntentRecord> rows = repository.findBetweenOrderByTime(before, Instant.now().plusSeconds(5));
         assertThat(rows).hasSize(3);
@@ -176,7 +182,7 @@ class PersistenceEndToEndTest {
                 .as("20 次决策耗时 %d ms —— 若落库变成同步的，这里会是秒级", elapsedMs)
                 .isLessThan(5000);
 
-        assertThat(recorder.awaitDrained(5000)).isTrue();
+        assertThat(recorder.awaitProcessed(5000)).isTrue();
         assertThat(repository.count()).isEqualTo(20);
         assertThat(recorder.droppedCount()).isZero();
         assertThat(recorder.failedCount()).isZero();

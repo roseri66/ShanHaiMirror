@@ -72,6 +72,9 @@ public class IntentRecorder implements DisposableBean {
     private final IntentRecordRepository repository;
     private final DatabaseBootstrap bootstrap;
 
+    /** 已提交进来的总数（含被丢弃的）。仅用于测试里判断「都处理完了没」。 */
+    private final AtomicLong submitted = new AtomicLong();
+
     private final AtomicLong recorded = new AtomicLong();
     private final AtomicLong dropped = new AtomicLong();
     private final AtomicLong failed = new AtomicLong();
@@ -112,6 +115,7 @@ public class IntentRecorder implements DisposableBean {
         if (record == null) {
             return;
         }
+        submitted.incrementAndGet();
         // 数据库都不可用就别往队列里攒了 ——
         // 攒满之后开始丢，而丢弃计数会把「数据库没起」这个真原因
         // 掩盖成「队列满了」，让排查方向从一开始就被带偏。
@@ -221,18 +225,35 @@ public class IntentRecorder implements DisposableBean {
         }
     }
 
-    /** 测试用：等队列被消费干净。返回是否在超时内完成。 */
-    boolean awaitDrained(long timeoutMs) throws InterruptedException {
+    /**
+     * 测试用：等所有已提交的记录都被处理完（写成功 / 丢弃 / 失败）。
+     *
+     * <h2>⚠️ 为什么不是「等队列空」</h2>
+     *
+     * 最初就是那么写的：队列空了之后再睡一个 poll 周期，然后返回。
+     * <b>它是 flaky 的</b> —— 消费线程 {@code drainTo} 之后、数据库写入完成之前，
+     * 队列已经是空的，而记录还没落库。实测在 20 条的批量下偶发「期望 20 实得 19」。
+     *
+     * <p>那个写法的本质是<b>用一个睡眠时长去猜一个异步操作何时完成</b>，
+     * 而这正是本项目踩坑 #17 记下的错误：<b>把断言绑死在挂钟上</b>，
+     * 机器一慢或负载一高就假失败。
+     *
+     * <p>现在等的是一个<b>真实条件</b>：已提交数 == 已处理数（成功+丢弃+失败）。
+     * 这三个计数都在写库<b>之后</b>才递增，所以条件成立时记录一定已经落地。
+     */
+    boolean awaitProcessed(long timeoutMs) throws InterruptedException {
         long deadline = System.currentTimeMillis() + timeoutMs;
         while (System.currentTimeMillis() < deadline) {
-            if (queue.isEmpty()) {
-                // 队列空了不代表最后一批已经写进去，再给一个 poll 周期
-                Thread.sleep(POLL_TIMEOUT_MS + 100);
-                return queue.isEmpty();
+            if (processedCount() >= submitted.get()) {
+                return true;
             }
-            Thread.sleep(20);
+            Thread.sleep(10);
         }
         return false;
+    }
+
+    private long processedCount() {
+        return recorded.get() + dropped.get() + failed.get();
     }
 
     public long recordedCount() {

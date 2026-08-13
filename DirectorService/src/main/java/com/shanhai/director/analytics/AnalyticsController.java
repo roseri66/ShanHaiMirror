@@ -148,7 +148,22 @@ public class AnalyticsController {
         schemes.add(FingerprintScheme.CURRENT
                 .without(FingerprintScheme.Field.BUDGET)
                 .without(FingerprintScheme.Field.FLOOR));
+        // ⭐ 这一条是被真实数据逼出来的。
+        //    最初的对照集只到「floor + budget 一起去掉」，在模拟流量上命中率翻倍，看着像结论了。
+        //    但真实对局数据显示它毫无效果 —— 因为 confidence 也跟随 floor
+        //    （前两层的历史长度固定，置信度就固定：F1→0.5、F2→0.7）。
+        //    split-contribution 把三者标成了互相一一对应，**要合并两层必须三个一起去掉**。
+        //    教训：连对照集本身都是拍的，也要由数据来纠正。
+        schemes.add(FingerprintScheme.CURRENT
+                .without(FingerprintScheme.Field.BUDGET)
+                .without(FingerprintScheme.Field.FLOOR)
+                .without(FingerprintScheme.Field.CONFIDENCE));
         schemes.add(FingerprintScheme.CURRENT.without(FingerprintScheme.Field.HISTORY));
+        // 只保留「玩家是谁 + 能选什么」，把所有跟随层号的量全去掉
+        schemes.add(new FingerprintScheme("only-player-and-options",
+                FingerprintScheme.DEFAULT_PROFILE_BUCKET, FingerprintScheme.DEFAULT_MAX_VARIANTS,
+                EnumSet.of(FingerprintScheme.Field.PROFILE, FingerprintScheme.Field.ARCHETYPE,
+                        FingerprintScheme.Field.RULES, FingerprintScheme.Field.AVAIL_ARCHETYPES)));
 
         for (int b : buckets == null ? List.of(34, 50, 100) : buckets) {
             schemes.add(FingerprintScheme.CURRENT.withBucket(b));
