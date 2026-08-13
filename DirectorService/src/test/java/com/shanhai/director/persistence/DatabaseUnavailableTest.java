@@ -57,6 +57,28 @@ class DatabaseUnavailableTest {
     @Autowired
     private DatabaseBootstrap bootstrap;
 
+    /**
+     * ⭐ 数据库挂了不代表服务不健康。
+     *
+     * <p>这条是 M5-2 实测时抓到的：加上 {@code spring-boot-starter-jdbc} 之后，
+     * Spring 会自动把数据源纳入健康聚合，于是 MySQL 一停
+     * {@code /actuator/health} 就返回 503 ——
+     * <b>而这个服务此刻明明能正常返回决策，那是它的全部职责。</b>
+     *
+     * <p>后果不是好看不好看：<b>503 会让编排器/负载均衡把一个健康的实例摘掉</b>，
+     * 就因为一个旁路功能挂了。这直接违背 D-24 硬约束①。
+     *
+     * <p>这与本项目「限流器被抽干不算降级」是同一条判断：
+     * 拒绝流量正是限流器在履职，不落库也不是服务不健康。
+     */
+    @Test
+    @DisplayName("数据库连不上时，/actuator/health 仍是 UP——落库是旁路，不进健康聚合")
+    void healthStaysUp_whenDatabaseIsDown() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/actuator/health"))
+                .andExpect(status().isOk());
+    }
+
     @Test
     @DisplayName("数据库连不上时，上下文照样加载、决策端点照样工作")
     void decisionEndpointStillWorks_whenDatabaseIsDown() throws Exception {

@@ -95,4 +95,35 @@ public class DatabaseBootstrap {
     public boolean isAvailable() {
         return available.get();
     }
+
+    /**
+     * 标记数据库已不可用。由 {@code IntentRecorder} 在<b>拿不到连接</b>时调用。
+     *
+     * <h2>为什么需要它</h2>
+     *
+     * {@link #initialize()} 只在启动时探测一次。<b>服务起来之后数据库挂掉，这个标志不会变</b> ——
+     * 于是 recorder 会继续入队、继续尝试写、继续失败。
+     *
+     * <p>实测过这个场景（M5-2 验收时把容器停掉）：指标显示的是
+     * {@code shm_persist_failed} 在涨，而 {@code shm_persist_dropped} 是 0。
+     * <b>这会把人带偏</b> —— 看到 failed 会去查 SQL 或 schema，
+     * 而真实原因是数据库死了。这与本项目「『被限流』和『后端挂了』必须可区分」是同一条判断。
+     *
+     * <h2>⚠️ 刻意不做自动恢复</h2>
+     *
+     * 置回 {@code true} 只发生在<b>重启服务</b>时。理由：自动恢复要引入「多久重探一次」
+     * 这个新参数，而它又是一个拍脑袋的值 —— <b>M5 这一版正是在处理「拍脑袋的参数」，
+     * 不该顺手再制造一个。</b>
+     *
+     * <p>代价是数据库恢复后要重启服务才恢复落库。对一个本机跑、不部署公网的服务，
+     * 这个代价可以接受，而且启动日志会明确说明当前状态。
+     *
+     * @param reason 供日志用的原因，方便事后区分是哪一类失败导致的
+     */
+    public void markUnavailable(String reason) {
+        if (available.compareAndSet(true, false)) {
+            log.warn("[M5] 数据库连接已失效，落库停止。原因：{}。"
+                    + "服务本身不受影响；恢复数据库后需重启本服务才会重新落库。", reason);
+        }
+    }
 }
