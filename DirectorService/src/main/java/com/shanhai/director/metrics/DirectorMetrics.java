@@ -59,7 +59,8 @@ public class DirectorMetrics {
         });
 
         // 缓存命中率。**这个指标直接决定 6.1 的分桶策略调得好不好**——
-        // 桶宽 20 与候选数 3 都是拍的，将来要靠它回头校准。
+        // 桶宽 20 与候选数 3 都是拍的。M5-5 已用真实流水校准（结论见 FingerprintScheme），
+        // 两个值维持不变；这条指标继续用来观察线上命中率。
         registry.gauge("shm.cache.hit.ratio", cache, IntentCache::hitRatio);
         registry.gauge("shm.cache.hits", cache, c -> (double) c.hitCount());
         registry.gauge("shm.cache.misses", cache, c -> (double) c.missCount());

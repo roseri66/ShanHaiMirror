@@ -45,6 +45,7 @@ import com.shanhai.director.api.IntentRequest;
  * 该变的是表达。
  *
  * <p><b>桶大小（20 分）与候选条数（3）都是拍的，不是测出来的。</b>
+ * <b>M5-5 已用真实数据校准过，两个值维持不变，依据见 {@link FingerprintScheme#DEFAULT_PROFILE_BUCKET}。</b>
  * 上线后靠回流数据回头调——这正是"数据回流"那条目标的第一个实际用途，
  * 而不是一句空口号。现在把它们写成常量并在这里注明来源，
  * 是为了日后调整时知道该找什么依据，而不是又拍一次。
@@ -55,7 +56,8 @@ public class IntentCache {
     private static final Logger log = LoggerFactory.getLogger(IntentCache.class);
 
     /**
-     * 同一指纹保留几条候选。**拍的值**，待回流数据校准。
+     * 同一指纹保留几条候选。**拍的值**；M5-5 量化了它的代价（候选 1 的命中率是候选 3 的 2.4 倍），
+     * 但那是体验与成本的取舍而非可优化参数，故维持 3。
      *
      * <p>M5 起真源在 {@link FingerprintScheme#DEFAULT_MAX_VARIANTS}，这里只是转发——
      * 保留这个常量是因为既有测试引用了它，而改测试不属于本次范围。
