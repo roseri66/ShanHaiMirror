@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 
 import com.shanhai.director.cache.IntentCache;
 import com.shanhai.director.llm.LlmClient;
+import com.shanhai.director.persistence.IntentRecorder;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -37,7 +38,8 @@ public class DirectorMetrics {
     private final MeterRegistry registry;
     private final Timer decisionTimer;
 
-    public DirectorMetrics(MeterRegistry registry, LlmClient llmClient, IntentCache cache) {
+    public DirectorMetrics(MeterRegistry registry, LlmClient llmClient, IntentCache cache,
+                           IntentRecorder recorder) {
         this.registry = registry;
 
         // 决策耗时分布。README 里"实测 3.8–5.0s"是三次手工测量，
@@ -61,6 +63,21 @@ public class DirectorMetrics {
         registry.gauge("shm.cache.hit.ratio", cache, IntentCache::hitRatio);
         registry.gauge("shm.cache.hits", cache, c -> (double) c.hitCount());
         registry.gauge("shm.cache.misses", cache, c -> (double) c.missCount());
+
+        // ── M5（决策 D-24）落库 ──
+        //
+        // ⭐ dropped 这条不能省。落库队列有界，满了就丢——**丢是设计内的行为，
+        //    但一个不可观测的丢弃，等于数据缺了都没人知道**。
+        //    这与「限流器被抽干不算降级，但要看指标」是同一条判断。
+        //
+        // 三条分开记而不是合成一个「没落成」，因为它们的应对完全不同：
+        //   dropped → 队列满或数据库没起，看 queue.depth 和启动日志
+        //   failed  → 写库时抛异常，看 SQL 或 schema
+        // 混成一条就等于都查不出来（同「被限流」与「后端挂了」要分开记）。
+        registry.gauge("shm.persist.recorded", recorder, r -> (double) r.recordedCount());
+        registry.gauge("shm.persist.dropped", recorder, r -> (double) r.droppedCount());
+        registry.gauge("shm.persist.failed", recorder, r -> (double) r.failedCount());
+        registry.gauge("shm.persist.queue.depth", recorder, r -> (double) r.queueDepth());
 
         // 订阅上游失败。用回调而非让 LlmClient 直接依赖本类，
         // 是因为本类的构造函数已经依赖 LlmClient（读熔断器状态），

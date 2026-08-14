@@ -1,6 +1,5 @@
 package com.shanhai.director.cache;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -55,17 +54,23 @@ public class IntentCache {
 
     private static final Logger log = LoggerFactory.getLogger(IntentCache.class);
 
-    /** 同一指纹保留几条候选。**拍的值**，待回流数据校准。 */
-    public static final int MAX_VARIANTS = 3;
+    /**
+     * 同一指纹保留几条候选。**拍的值**，待回流数据校准。
+     *
+     * <p>M5 起真源在 {@link FingerprintScheme#DEFAULT_MAX_VARIANTS}，这里只是转发——
+     * 保留这个常量是因为既有测试引用了它，而改测试不属于本次范围。
+     */
+    public static final int MAX_VARIANTS = FingerprintScheme.DEFAULT_MAX_VARIANTS;
 
-    /** 五维画像的分桶宽度（分）。**拍的值**，待回流数据校准。 */
-    private static final int PROFILE_BUCKET = 20;
-
-    /** 画像里参与指纹的五个维度。**不含 resourceSurplus**——它恒为 50，
-     *  无数据源（D-09），入 key 只是给每条指纹加一个常量后缀，纯浪费。 */
-    private static final List<String> PROFILE_DIMENSIONS = List.of(
-            "buildConcentration", "combatEfficiency",
-            "strategySwitch", "survivalPressure");
+    /**
+     * 线上正在用的指纹方案。
+     *
+     * <p>M5（决策 D-24）把「算指纹」从本类抽到了 {@link FingerprintScheme}，
+     * 因为离线模拟器要用**同一份算法**跑不同的参数组合——各写一份必然漂移，
+     * 而一旦漂移，模拟出来的命中率就和真实的不可比，那套东西也就失去了全部意义。
+     * **本类的行为一字未改**，既有的缓存测试就是这条的守卫。
+     */
+    private static final FingerprintScheme SCHEME = FingerprintScheme.CURRENT;
 
     private final IntentCacheStore store;
 
@@ -93,41 +98,55 @@ public class IntentCache {
      * @return 命中时返回随机一条候选；未命中或候选未满 3 条时返回 empty（调用方应走 LLM）
      */
     public Optional<DirectorIntent> lookup(IntentRequest request) {
+        return lookupDetailed(request).intent();
+    }
+
+    /**
+     * 查缓存，并连同「为什么是这个结果」一起返回。
+     *
+     * <p>M5（决策 D-24）加的。{@link #lookup} 只回答「有没有」，
+     * 而落库要记的是「**为什么**没有」—— 指纹从没见过（切太碎）和候选还没攒满（正在预热）
+     * 是两件完全不同的事，混成一个「未命中」就无法区分「方案有问题」和「还在预热」。
+     *
+     * <p><b>既有逻辑一行未改</b>：{@link #lookup} 现在只是丢掉了这里多出来的那部分信息。
+     */
+    public LookupResult lookupDetailed(IntentRequest request) {
         String fp = fingerprint(request);
         List<DirectorIntent> variants = store.get(fp);
 
-        // 一条都没有：只能走 LLM。
-        if (variants.isEmpty()) {
-            misses.incrementAndGet();
-            log.debug("缓存未命中（无候选），走 LLM。指纹={}", fp);
-            return Optional.empty();
-        }
+        // ⭐ 判定规则本身在 CachePolicy 里，本类只负责「状态存在哪」。
+        //    离线模拟器（M5）用同一个 CachePolicy 配自己的内存状态重放历史 ——
+        //    规则只有一份，就不存在漂移。
+        CacheOutcome outcome = CachePolicy.decide(variants.size(), MAX_VARIANTS,
+                () -> lookupCounts.computeIfAbsent(fp, k -> new AtomicLong()).incrementAndGet());
 
-        // 已攒满：稳态，随机取一条。
-        if (variants.size() >= MAX_VARIANTS) {
-            return hit(variants, fp);
-        }
-
-        // ★ 预热期：**边用边攒**，隔一次去 LLM 补一条。
-        //
-        // 最初的规则是"未满 3 条一律不命中"，在真实流量下等于缓存永不生效：
-        // 一局只发 2 次决策请求（共 3 层，F0 是观察层不走 Provider），
-        // 而 F1/F2 的预算不同、天然是两条指纹——同一条指纹要攒满 3 次，
-        // 得连打 4 局以上，且期间画像分桶不能漂。
-        // 用户实测打了 3 把，**一次都没命中**。
-        //
-        // 现在改成：有候选就能用，但未满时隔一次仍走 LLM 补充。
-        // 代价是预热期内同一句台词会重复出现一两次；
-        // 收益是从第 2 次请求起就开始省钱，而且最终仍收敛到 3 条。
-        // 这个取舍是明的：**一个永远不命中的缓存，比偶尔重复一句台词糟得多。**
-        long n = lookupCounts.computeIfAbsent(fp, k -> new AtomicLong()).incrementAndGet();
-        if (n % 2 == 0) {
-            return hit(variants, fp);
+        if (outcome.isHit()) {
+            return new LookupResult(hit(variants, fp), outcome, fp, variants.size());
         }
 
         misses.incrementAndGet();
-        log.debug("预热期主动补充候选（{}/{}），走 LLM。指纹={}", variants.size(), MAX_VARIANTS, fp);
-        return Optional.empty();
+        if (outcome == CacheOutcome.MISS_EMPTY) {
+            log.debug("缓存未命中（无候选），走 LLM。指纹={}", fp);
+        } else {
+            log.debug("预热期主动补充候选（{}/{}），走 LLM。指纹={}", variants.size(), MAX_VARIANTS, fp);
+        }
+        return new LookupResult(Optional.empty(), outcome, fp, variants.size());
+    }
+
+    /**
+     * 一次缓存查询的完整结果。
+     *
+     * @param intent       命中时的候选，未命中为 empty
+     * @param outcome      为什么是这个结果，见 {@link CacheOutcome}
+     * @param fingerprint  本次算出来的指纹。**顺带返回是为了让调用方不必再算一遍** ——
+     *                     指纹计算不便宜（要排序拼接三个集合），而落库正好也要它
+     * @param variantCount 查询发生时该指纹下已有几条候选
+     */
+    public record LookupResult(
+            Optional<DirectorIntent> intent,
+            CacheOutcome outcome,
+            String fingerprint,
+            int variantCount) {
     }
 
     private Optional<DirectorIntent> hit(List<DirectorIntent> variants, String fp) {
@@ -169,97 +188,6 @@ public class IntentCache {
      * 只会表现为"命中率异常低"或"不该命中的命中了"，两者都极难在运行中发现。
      */
     String fingerprint(IntentRequest req) {
-        StringBuilder sb = new StringBuilder();
-
-        sb.append("f=").append(orZero(req.floorIndex()));
-        sb.append("|b=").append(orZero(req.challengeBudget()));
-
-        Map<String, Object> profile = req.profile();
-        for (String dim : PROFILE_DIMENSIONS) {
-            sb.append('|').append(dim, 0, 2).append('=').append(bucket(num(profile, dim)));
-        }
-        sb.append("|c=").append(confidenceTier(num(profile, "confidence")));
-        sb.append("|a=").append(str(profile, "dominantArchetype"));
-
-        // 集合语义：排序后拼接。不排序的话同一组候选换个顺序就是另一条指纹，
-        // 命中率会莫名其妙地低，而且极难发现原因。
-        sb.append("|r=").append(sortedJoin(ruleKeys(req)));
-        sb.append("|e=").append(sortedJoin(req.availableArchetypes()));
-
-        // 历史只取规则 tag：Fairness 只关心"这条规则用过没有"。
-        // 带上层号的话每层都是新指纹，等于缓存失效。
-        sb.append("|h=").append(sortedJoin(historyTags(req)));
-
-        return sb.toString();
-    }
-
-    private static List<String> ruleKeys(IntentRequest req) {
-        List<String> out = new ArrayList<>();
-        if (req.availableRules() != null) {
-            for (IntentRequest.AvailableRule r : req.availableRules()) {
-                out.add(r.tag() + ":" + r.level());
-            }
-        }
-        return out;
-    }
-
-    private static List<String> historyTags(IntentRequest req) {
-        List<String> out = new ArrayList<>();
-        if (req.decisionHistory() != null) {
-            for (IntentRequest.HistoryEntry e : req.decisionHistory()) {
-                if (e.ruleTags() != null) {
-                    out.addAll(e.ruleTags());
-                }
-            }
-        }
-        return out;
-    }
-
-    private static String sortedJoin(List<String> items) {
-        if (items == null || items.isEmpty()) {
-            return "-";
-        }
-        List<String> copy = new ArrayList<>(items);
-        copy.sort(String::compareTo);
-        return String.join(",", copy);
-    }
-
-    /** 五维分桶：0-19 → 0，20-39 → 1，… 87 和 85 落进同一桶。 */
-    private static int bucket(double v) {
-        return (int) (Math.max(0, Math.min(100, v)) / PROFILE_BUCKET);
-    }
-
-    /**
-     * 置信度三档。
-     *
-     * <p>护栏只在 0.6 处有阈值行为（低置信度禁重度规则），
-     * 分得比这更细是假精度——0.71 和 0.79 对决策没有任何区别，
-     * 却会让它们落进不同的缓存槽。
-     */
-    private static String confidenceTier(double c) {
-        if (c < 0.6) {
-            return "lo";
-        }
-        return c <= 0.8 ? "mid" : "hi";
-    }
-
-    private static int orZero(Integer v) {
-        return v == null ? 0 : v;
-    }
-
-    private static double num(Map<String, Object> m, String key) {
-        if (m == null) {
-            return 0.0;
-        }
-        Object v = m.get(key);
-        return v instanceof Number n ? n.doubleValue() : 0.0;
-    }
-
-    private static String str(Map<String, Object> m, String key) {
-        if (m == null) {
-            return "-";
-        }
-        Object v = m.get(key);
-        return v instanceof String s && !s.isBlank() ? s : "-";
+        return SCHEME.compute(FingerprintInput.from(req));
     }
 }

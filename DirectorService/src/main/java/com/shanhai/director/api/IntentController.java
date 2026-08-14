@@ -1,5 +1,6 @@
 package com.shanhai.director.api;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +16,8 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Optional;
 
 import com.shanhai.director.cache.IntentCache;
+import com.shanhai.director.persistence.IntentRecord;
+import com.shanhai.director.persistence.IntentRecorder;
 import com.shanhai.director.llm.LlmClient;
 import com.shanhai.director.metrics.DirectorMetrics;
 import com.shanhai.director.ratelimit.RateLimiter;
@@ -44,6 +47,14 @@ public class IntentController {
     private final DirectorMetrics metrics;
 
     /**
+     * M5（决策 D-24）落库。
+     *
+     * <p>⚠️ <b>它绝不能影响主链路</b>：{@code record()} 是非阻塞的，队列满了直接丢。
+     * 数据库挂了、写库报错，决策照常返回 —— 这是 D-24 的硬约束①。
+     */
+    private final IntentRecorder recorder;
+
+    /**
      * 故障注入开关，用于 D-23 要求的第三条降级回归
      * 「后端返 200 但 body 是垃圾」。
      *
@@ -57,11 +68,13 @@ public class IntentController {
     private boolean mockGarbage;
 
     public IntentController(LlmClient llmClient, RateLimiter rateLimiter,
-                            IntentCache intentCache, DirectorMetrics metrics) {
+                            IntentCache intentCache, DirectorMetrics metrics,
+                            IntentRecorder recorder) {
         this.llmClient = llmClient;
         this.rateLimiter = rateLimiter;
         this.intentCache = intentCache;
         this.metrics = metrics;
+        this.recorder = recorder;
     }
 
     /** 上行路径。<b>必须与 UE 侧 FSHMRemoteProvider::IntentPath 一致</b>，那边有测试钉着。 */
@@ -122,9 +135,12 @@ public class IntentController {
         // 命中的是同一"决策情境"而非同一请求：指纹对连续量分桶，
         // 87 分和 85 分的玩家算同一类。同一指纹存 3 条、随机取 1 条，
         // 是为了不让同类玩家听到同一句台词——白泽的人格是体验核心之一。
-        Optional<DirectorIntent> cached = intentCache.lookup(request);
-        if (cached.isPresent()) {
-            return respond(cached.get(), "Cache", "hit", startedAt);
+        // M5 起用 lookupDetailed：它比 lookup 多带回「为什么是这个结果」与指纹本身。
+        // 落库要记的正是这两样——而指纹计算不便宜（要排序拼接三个集合），
+        // 顺手带回来比事后重算一遍好，也少一处算法漂移的机会。
+        IntentCache.LookupResult lookup = intentCache.lookupDetailed(request);
+        if (lookup.intent().isPresent()) {
+            return respond(request, lookup, lookup.intent().get(), "Cache", "hit", startedAt);
         }
 
         // --- 真实 LLM 路径 ---
@@ -134,18 +150,22 @@ public class IntentController {
                 // 只缓存**真实 LLM 结果**。stub 与降级产物都不进缓存：
                 // 缓存里混进占位内容，之后每次命中都在发假决策。
                 intentCache.store(request, fromLlm);
-                return respond(fromLlm, "Llm", "miss", startedAt);
+                return respond(request, lookup, fromLlm, "Llm", "miss", startedAt);
             }
             // 上游失败：**返回 5xx 而不是悄悄回落 stub**。
             // 回落的话客户端会拿到一个"成功"的响应，把 stub 的固定配比
             // 当成真实决策记进日志——那是往证据链里掺假。
             // 返回 5xx 客户端就降级本地，玩家零感知，日志如实记降级。
             log.warn("上游 LLM 交不出结果，返回 503 让客户端降级本地");
+            // ⭐ 这条**也要落库**。它虽然没产出决策，但它确实查了缓存——
+            //    模拟器要重放缓存状态的演进，漏掉它会让重放的序列和真实的对不上。
+            //    source 记成 Upstream503：模拟器据此知道「这次没有往缓存里放东西」。
+            record(request, lookup, "Upstream503", 503, startedAt);
             return ResponseEntity.status(503).build();
         }
 
         // --- 未配置 key：stub 路径（M0 行为，保留供无 key 时演示）---
-        return respond(buildStubIntent(), "ServerLocal", "miss", startedAt);
+        return respond(request, lookup, buildStubIntent(), "ServerLocal", "miss", startedAt);
     }
 
     /**
@@ -156,15 +176,45 @@ public class IntentController {
      * 客户端会把它记进决策日志的 trace，**谎报来源等于往证据链里掺假**。
      * 这与客户端"UI 显示实际发生了什么、不是配置成了什么"（踩坑 #20）是同一条线。
      */
-    private ResponseEntity<?> respond(DirectorIntent intent, String source, String cache, long startedAt) {
+    private ResponseEntity<?> respond(IntentRequest request, IntentCache.LookupResult lookup,
+                                      DirectorIntent intent, String source, String cache,
+                                      long startedAt) {
         final long elapsedNanos = System.nanoTime() - startedAt;
         final long elapsedMs = elapsedNanos / 1_000_000L;
         metrics.recordDecision(source, elapsedNanos);
+        record(request, lookup, source, 200, startedAt);
         return ResponseEntity.ok()
                 .header("X-SHM-Source", source)
                 .header("X-SHM-Cache", cache)
                 .header("X-SHM-Elapsed-Ms", String.valueOf(elapsedMs))
                 .body(intent);
+    }
+
+    /**
+     * 把这次请求交给落库（M5，决策 D-24）。
+     *
+     * <h2>⚠️ 口径：只记「走到了缓存查询」的请求</h2>
+     *
+     * 版本不符的 400 和被限流的 429 <b>不记</b> —— 它们根本没查缓存，
+     * 记进去会让命中率的分母不对，而本表存在的唯一目的就是校准缓存方案。
+     * <b>口径写在这里，也写在表注释里</b>：日后看数据的人一定会问这个。
+     *
+     * <p>{@code source} 顺带承担了一个模拟器需要的信息：
+     * <b>只有 {@code "Llm"} 意味着「这次往缓存里放了东西」</b>
+     * （缓存命中不放、stub 不放、503 没东西可放）。重放时靠它决定要不要模拟一次 store。
+     */
+    private void record(IntentRequest request, IntentCache.LookupResult lookup,
+                        String source, int httpStatus, long startedAt) {
+        // ⚠️ 整段兜住：落库的任何问题都不能影响已经算好的决策。
+        // 这里兜的是「构造记录时出意外」（比如画像里有个诡异的值），
+        // recorder.record() 自己兜的是「队列满」与「数据库不可用」。
+        try {
+            recorder.record(IntentRecord.of(request, lookup.fingerprint(), lookup.outcome(),
+                    lookup.variantCount(), source, httpStatus,
+                    (System.nanoTime() - startedAt) / 1_000_000L, Instant.now()));
+        } catch (RuntimeException e) {
+            log.warn("[M5] 构造流水记录失败，本条不落库：{}", e.toString());
+        }
     }
 
     /**
