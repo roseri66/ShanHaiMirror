@@ -22,20 +22,13 @@
 
 | 项 | 值 |
 |---|---|
-| 运行时间 | 2026-07-29 22:20 |
-| 结果 | **57 / 57 通过** |
+| 运行时间 | 2026-08-14 14:11 |
+| 结果 | **63 / 63 通过** |
 | 退出码 | 0 |
-| 耗时 | 约 21 秒 |
 | 运行依赖 | 无需 World / PIE / 网络（被测对象为纯函数/纯逻辑）|
 
 覆盖范围：画像分析器（链路②）· 规则解析器（链路⑥）· 四道护栏（链路⑤）·
 本地 Provider（链路④）· **三级降级（链路④的失败路径）**。
-
-> 53 → 57 是 2026-07-29 代码审查补的 `Tests/SHMDegradationTest.cpp`：
-> 此前"第 ④ 步可以整体失败"这条不变量只靠人工验收，而人工覆盖不到
-> "Provider 交出畸形数据""连本地兜底都被拒"这类路径。
-> 断言判据是**降级后语义正确**（有没有标 degraded、原因是否可读、被拒的原件有没有留下），
-> 而非"没崩"；并做过变异测试确认这些断言有牙（见 `Saved/Logs/MutationTest.log`）。
 
 | 结果 | 测试（路径已去掉公共前缀 `SHM.`） |
 |---|---|
@@ -55,8 +48,6 @@
 | PASS | `Director.JsonIntent.NumericFields_AreDiscarded` |
 | PASS | `Director.JsonIntent.RoundTrip_PreservesIntent` |
 | PASS | `Director.JsonIntent.Valid_ParsesAllFields` |
-| PASS | `Director.Llm.Endpoint_IsConfigurable` |
-| PASS | `Director.Llm.NoApiKey_FailsImmediatelyForDegrade` |
 | PASS | `Director.LocalProvider.HighPressure_GetsRecovery` |
 | PASS | `Director.LocalProvider.LowConfidence_OnlyLightRules` |
 | PASS | `Director.LocalProvider.RangerProfile_GetsCounterWeights` |
@@ -77,10 +68,12 @@
 | PASS | `Director.ProfileAnalyzer.SurvivalPressure_EventsAccumulate` |
 | PASS | `Director.ProfileAnalyzer.SurvivalPressure_NoEventsIsZero` |
 | PASS | `Director.ProfileAnalyzer.ZeroAttack_NoDivideByZero` |
-| PASS | `Director.Prompt.RequestBody_IsValidOpenAiShape` |
-| PASS | `Director.Prompt.SameContext_SamePrompt` |
-| PASS | `Director.Prompt.System_ForbidsNumericOutput` |
-| PASS | `Director.Prompt.User_InjectsCandidatesAndBudget` |
+| PASS | `Director.Remote.Disabled_FailsImmediatelyExactlyOnce` |
+| PASS | `Director.Remote.FailureReason_IsDistinguishable` |
+| PASS | `Director.Remote.IntentPath_MatchesServerContract` |
+| PASS | `Director.Remote.IsAvailable_ReflectsConfigNotReachability` |
+| PASS | `Director.Remote.ProviderName_IsRemote` |
+| PASS | `Director.Remote.Timeout_LeavesRoomForServerUpstream` |
 | PASS | `Director.Replay.BadScripts_FailSafely` |
 | PASS | `Director.Replay.DefaultScript_LoadsAndProducesValidIntents` |
 | PASS | `Director.Replay.MissingFloor_ReturnsEmptyForDegrade` |
@@ -96,14 +89,12 @@
 | PASS | `Director.Validator.Schema_TagsMustBeWhitelisted` |
 | PASS | `Director.Validator.Schema_WeightsMustSumToOne` |
 | PASS | `Director.Validator.ValidIntent_PassesAllFourGates` |
-
-测试源码位于 `UnrealProject/Source/ShanHaiMirror/Tests/`。
-
-> 注：DirectorCore 的编排层此前无独立单测，现已由 `Director.Degrade.*` 四条覆盖
-> 主要失败路径（经 `USHMDirectorCore::SetupForTesting()` 这个测试缝装配依赖，
-> 它只做依赖装配、不读环境变量，测试不受本机配置影响）。
-> **成功路径的 ③⑤⑥ 串联仍靠控制台命令 `SHM.DumpDecision` 在真实 GameInstance 中验证**
-> （headless 运行日志），未做独立单测——其逻辑是对已单测组件的顺序调用。
+| PASS | `Director.Wire.LogContext_StillExactlyTwoFields` |
+| PASS | `Director.Wire.Profile_MatchesPreRefactorFieldNames` |
+| PASS | `Director.Wire.Profile_SameShapeInLogAndRequest` |
+| PASS | `Director.Wire.Request_CarriesAllSevenContextFields` |
+| PASS | `Director.Wire.Request_HistoryOmitsFieldsWithNoDataSource` |
+| PASS | `Director.Wire.Request_LeaksNoCppTypeNames` |
 
 ## 前端测试（WebReplay）
 

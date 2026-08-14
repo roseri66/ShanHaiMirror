@@ -1,9 +1,24 @@
 #include "SHMWeaponComponent.h"
+#include "SHMDebugCheats.h"
 #include "SHMGameplayTags.h"
 
 USHMWeaponComponent::USHMWeaponComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+}
+
+// 叠加 D-25 的调试倍率。远程再多乘一层 RangedDamageMult ——
+// 实测远程 DPS 只有近战的 40%（12/0.6 对 20/0.4），采远程样本时不额外补偿根本打不完。
+float USHMWeaponComponent::GetActiveBaseDamage() const
+{
+	float Damage = ActiveBaseDamage * FSHMDebugCheats::PlayerDamageMult();
+
+	if (ActiveAttackPattern == EAttackPattern::Ranged_Shot)
+	{
+		Damage *= FSHMDebugCheats::RangedDamageMult();
+	}
+
+	return Damage;
 }
 
 void USHMWeaponComponent::BeginPlay()

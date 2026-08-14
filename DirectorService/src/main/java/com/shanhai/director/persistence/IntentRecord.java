@@ -37,6 +37,8 @@ import com.shanhai.director.cache.FingerprintInput;
  * @param httpStatus       返回给客户端的状态码
  * @param latencyMs        服务端自报耗时，不含网络往返
  * @param profileExtraJson 不参与指纹但值得留档的画像字段（如恒为 50 的 resourceSurplus）
+ * @param debugFlags       ⭐ D-25：调试作弊倍率，如 {@code "dmg=4.00,hp=0.40"}；
+ *                         {@code null} 表示真实游玩。<b>这批数据能答结构问题，不能答比率问题</b>
  * @param createdAt        记录时间
  * @since M5
  */
@@ -51,6 +53,7 @@ public record IntentRecord(
         int httpStatus,
         int latencyMs,
         String profileExtraJson,
+        String debugFlags,
         Instant createdAt) {
 
     public IntentRecord {
@@ -63,6 +66,9 @@ public record IntentRecord(
         // 那种情况记成空串比让整条记录丢掉好：**样本本来就少，不该因为一个可选字段而丢样本。**
         runId = runId == null ? "" : runId;
         source = source == null ? "unknown" : source;
+        // 空串与 null 在这里必须归一：分析时要按「debug_flags IS NULL = 真实数据」来切，
+        // 混进空串会让那个判据悄悄漏掉一部分行。
+        debugFlags = (debugFlags == null || debugFlags.isBlank()) ? null : debugFlags.strip();
     }
 
     /** 画像里参与指纹计算的字段。留档用的 extra 就是「画像的全部字段减去这些」。 */
@@ -83,6 +89,7 @@ public record IntentRecord(
                                   String source,
                                   int httpStatus,
                                   long latencyMs,
+                                  String debugFlags,
                                   Instant now) {
         return new IntentRecord(
                 request.runId(),
@@ -95,6 +102,7 @@ public record IntentRecord(
                 httpStatus,
                 (int) Math.min(Integer.MAX_VALUE, Math.max(0, latencyMs)),
                 extraProfileJson(request.profile()),
+                debugFlags,
                 now);
     }
 
