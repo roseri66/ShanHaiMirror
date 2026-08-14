@@ -312,6 +312,6 @@ class IntentRecorderTest {
                 List.of());
         return IntentRecord.of(req,
                 FingerprintScheme.CURRENT.compute(FingerprintInput.from(req)),
-                CacheOutcome.MISS_EMPTY, 0, "Llm", 200, 1234L, at);
+                CacheOutcome.MISS_EMPTY, 0, "Llm", 200, 1234L, null, at);
     }
 }

@@ -39,8 +39,8 @@ public class IntentRecordRepository {
                 strategy_switch, survival_pressure, confidence, dominant_archetype,
                 available_rules_key, available_arch_key, history_tags_key,
                 fingerprint, cache_outcome, variant_count, source,
-                http_status, latency_ms, profile_extra_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                http_status, latency_ms, profile_extra_json, debug_flags, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
     private static final String SELECT_COLUMNS = """
@@ -49,7 +49,7 @@ public class IntentRecordRepository {
             strategy_switch, survival_pressure, confidence, dominant_archetype,
             available_rules_key, available_arch_key, history_tags_key,
             fingerprint, cache_outcome, variant_count, source,
-            http_status, latency_ms, profile_extra_json, created_at
+            http_status, latency_ms, profile_extra_json, debug_flags, created_at
             """;
 
     private final JdbcTemplate jdbc;
@@ -92,6 +92,7 @@ public class IntentRecordRepository {
             ps.setInt(++i, r.httpStatus());
             ps.setInt(++i, r.latencyMs());
             ps.setString(++i, r.profileExtraJson());
+            ps.setString(++i, r.debugFlags());
             ps.setTimestamp(++i, Timestamp.from(r.createdAt()));
         });
     }
@@ -147,5 +148,6 @@ public class IntentRecordRepository {
             rs.getInt("http_status"),
             rs.getInt("latency_ms"),
             rs.getString("profile_extra_json"),
+            rs.getString("debug_flags"),
             rs.getTimestamp("created_at").toInstant());
 }

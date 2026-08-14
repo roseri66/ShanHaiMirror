@@ -156,7 +156,7 @@ class IntentRecordRepositoryTest {
                 "weirdField", "含\"引号\"与\\反斜杠"));
 
         IntentRecord rec = new IntentRecord("run-json", 1, sampleInput(),
-                "fp-json", CacheOutcome.HIT, 3, "Cache", 200, 2, json, now);
+                "fp-json", CacheOutcome.HIT, 3, "Cache", 200, 2, json, null, now);
 
         repository.insertBatch(List.of(rec));
 
@@ -164,6 +164,44 @@ class IntentRecordRepositoryTest {
                 now.minusSeconds(60), now.plusSeconds(60)).get(0);
         assertThat(read.profileExtraJson()).contains("resourceSurplus");
         assertThat(read.profileExtraJson()).contains("引号");
+    }
+
+    /**
+     * ⭐ D-25：调试标记必须能原样往返，且「真实游玩」必须是 {@code NULL}。
+     *
+     * <p>这条守的是**数据可信度的边界**：作弊采来的样本会抬高战斗效率的速度分，
+     * 它能回答「去掉某字段会不会合并指纹」，<b>不能</b>回答「真实命中率是多少」。
+     * 分析时靠 {@code debug_flags IS NULL} 来切出真实数据 ——
+     * 所以「真实行必须是 NULL 而不是空串」不是洁癖，<b>是那个判据能不能用的前提</b>。
+     */
+    @Test
+    @DisplayName("debug_flags 往返一致，且真实游玩的记录存成 NULL")
+    void debugFlags_roundTripsAndDefaultsToNull() {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+
+        IntentRecord cheated = new IntentRecord("run-cheat", 1, sampleInput(),
+                "fp-cheat", CacheOutcome.HIT, 3, "Cache", 200, 2, null,
+                "dmg=4.00,hp=0.40", now);
+        // 空串走的是「真实游玩」那一档：构造器会把它归一成 null
+        IntentRecord real = new IntentRecord("run-real", 1, sampleInput(),
+                "fp-real", CacheOutcome.HIT, 3, "Cache", 200, 2, null,
+                "   ", now.plusMillis(1));
+
+        repository.insertBatch(List.of(cheated, real));
+
+        List<IntentRecord> read = repository.findBetweenOrderByTime(
+                now.minusSeconds(60), now.plusSeconds(60));
+
+        assertThat(read.get(0).debugFlags()).isEqualTo("dmg=4.00,hp=0.40");
+        assertThat(read.get(1).debugFlags())
+                .as("空白串必须归一成 null，否则 `debug_flags IS NULL` 会漏掉这一行")
+                .isNull();
+
+        // 直接问数据库，而不是只信 RowMapper —— 归一化如果只发生在 Java 侧，
+        // 那么绕过 Repository 的任何一次 SQL 分析都会看到空串。
+        Integer realRows = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM intent_request WHERE debug_flags IS NULL", Integer.class);
+        assertThat(realRows).isEqualTo(1);
     }
 
     /**
@@ -194,7 +232,7 @@ class IntentRecordRepositoryTest {
         IntentRequest req = sampleRequest();
         return IntentRecord.of(req,
                 FingerprintScheme.CURRENT.compute(FingerprintInput.from(req)),
-                CacheOutcome.MISS_EMPTY, 0, "Llm", 200, 3765L, at);
+                CacheOutcome.MISS_EMPTY, 0, "Llm", 200, 3765L, null, at);
     }
 
     private static FingerprintInput sampleInput() {

@@ -104,6 +104,9 @@ private:
 	UFUNCTION()
 	void OnOwnerDeath();
 
+	/** D-25：把调试血量倍率作用到玩家（默认倍率 1.0 时是空操作）。 */
+	void ApplyDebugMaxHPMult();
+
 	// 武器切换绑定兜底：IA 资产未配置 / IMC 未映射按键时，运行时补一套空格绑定。
 	// BeginPlay 延迟调用（等 BP 的 AddMappingContext 完成后再查询）
 	void EnsureSwitchWeaponBinding();

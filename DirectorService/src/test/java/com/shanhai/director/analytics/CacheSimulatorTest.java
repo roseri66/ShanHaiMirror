@@ -74,7 +74,7 @@ class CacheSimulatorTest {
                 realCache.store(req, someIntent());
             }
             records.add(IntentRecord.of(req, r.fingerprint(), r.outcome(), r.variantCount(),
-                    source, 200, 100L, t));
+                    source, 200, 100L, null, t));
             t = t.plusSeconds(1);
         }
 
@@ -332,7 +332,7 @@ class CacheSimulatorTest {
 
     private static IntentRecord rec(IntentRequest req, String fp, CacheOutcome outcome,
                                     int variantCount, String source, Instant at) {
-        return IntentRecord.of(req, fp, outcome, variantCount, source, 200, 100L, at);
+        return IntentRecord.of(req, fp, outcome, variantCount, source, 200, 100L, null, at);
     }
 
     // ── 测试数据 ──
@@ -344,7 +344,7 @@ class CacheSimulatorTest {
     private static IntentRecord record(IntentRequest req, String source, Instant at) {
         return IntentRecord.of(req,
                 FingerprintScheme.CURRENT.compute(FingerprintInput.from(req)),
-                CacheOutcome.MISS_EMPTY, 0, source, 200, 100L, at);
+                CacheOutcome.MISS_EMPTY, 0, source, 200, 100L, null, at);
     }
 
     private static IntentRequest request(String runId, int floor, int budget, double build) {

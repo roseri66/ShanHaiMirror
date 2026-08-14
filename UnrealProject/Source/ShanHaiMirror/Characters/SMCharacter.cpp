@@ -17,6 +17,7 @@
 #include "Framework/SHMWeaponComponent.h"
 #include "Framework/SHMAbilityComponent.h"
 #include "Framework/SHMBuildComponent.h"
+#include "Framework/SHMDebugCheats.h"
 #include "Framework/SHMEventBus.h"
 #include "Framework/SHMGameplayTags.h"
 #include "Combat/SHMProjectile.h"
@@ -59,12 +60,41 @@ void ASMCharacter::BeginPlay()
 	if (AttributeComp)
 	{
 		AttributeComp->OnDeath.AddDynamic(this, &ASMCharacter::OnOwnerDeath);
+		ApplyDebugMaxHPMult();
 	}
 
 	// 延迟检查武器切换绑定：等 BP 在 Possessed 里的 AddMappingContext 先完成，
 	// 再查询"有没有按键映射到切换"才准（踩坑 #4 的时序教训）
 	GetWorldTimerManager().SetTimer(BindingCheckTimer, this,
 		&ASMCharacter::EnsureSwitchWeaponBinding, 0.5f, false);
+}
+
+// ============================================================================
+//  D-25：把调试血量倍率作用到玩家身上
+//
+//  走 Health.PctBonus 这条既有通路，**不碰 Base** —— 这样它和规则/被动加的
+//  百分比走同一套公式，也不会把作弊值写进看起来像配置的地方。
+//
+//  ⚠️ 只作用于玩家。敌人不挂 WeaponComponent、也不走这里，
+//     因为削敌人会让 SurvivalPressure 恒为 0，正好废掉要采的那一维（见 D-25）。
+// ============================================================================
+void ASMCharacter::ApplyDebugMaxHPMult()
+{
+	const float Mult = FSHMDebugCheats::PlayerMaxHPMult();
+	if (FMath::IsNearlyEqual(Mult, 1.0f))
+	{
+		return;
+	}
+
+	AttributeComp->Health.PctBonus += (Mult - 1.0f);
+
+	// 血上限降下来之后，当前血量得跟着钳回去，否则会出现「当前血 > 上限」，
+	// 而 GetHPRatio 会算出 >1 的比值，低血判定就永远不触发了。
+	AttributeComp->CurrentHP = FMath::Min(AttributeComp->CurrentHP, AttributeComp->GetMaxHP());
+
+	UE_LOG(LogTemp, Warning,
+		TEXT("[D-25 调试作弊] 玩家血量倍率 %.2f 生效，最大血量 %.0f。此局数据会被标记为调试数据。"),
+		Mult, AttributeComp->GetMaxHP());
 }
 
 void ASMCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)

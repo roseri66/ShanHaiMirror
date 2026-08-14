@@ -53,6 +53,17 @@ CREATE TABLE IF NOT EXISTS intent_request (
     -- 万一以后有了数据源，历史数据里至少能看出当时它是占位。
     profile_extra_json  JSON         NULL,
 
+    -- ⭐ D-25：这条流水是不是在调试作弊状态下采的，以及当时的倍率。
+    -- NULL / 空串 = 真实游玩。存倍率而不只存布尔，是因为
+    -- **倍率不同的两批作弊数据同样不可比**。
+    --
+    -- 为什么必须有这一列：作弊会抬高战斗效率的速度分，于是这批数据
+    -- 能回答「去掉某字段会不会合并指纹」（结构问题），
+    -- 不能回答「真实游玩的命中率是多少」（比率问题）。
+    -- 没有这一列，两批数据混在一起之后**任何一次重放都无法解释** ——
+    -- 那正是踩坑 #31（测试数据污染开发库）换了个场景。
+    debug_flags         VARCHAR(64)  NULL,
+
     created_at          DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
     PRIMARY KEY (id),
@@ -67,7 +78,11 @@ CREATE TABLE IF NOT EXISTS intent_request (
     -- 按局回溯用。(run_id, floor_index) 也是天然的业务唯一键，
     -- 但刻意不建 UNIQUE：同一局同一层被重复请求（人工用 SHM.DumpDecisionAsync 反复调试）
     -- 是正常现象，那些请求同样是有效样本，不该被去重掉。
-    KEY idx_run_floor (run_id, floor_index)
+    KEY idx_run_floor (run_id, floor_index),
+
+    -- 分析时几乎总要先切「只看真实数据」或「只看作弊数据」，
+    -- 且真实数据行的 debug_flags 是 NULL —— 单列索引即可，不必进复合索引。
+    KEY idx_debug_flags (debug_flags)
 
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='决策请求流水。用途见 D-24：校准缓存指纹方案，而不是做业务查询';

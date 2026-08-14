@@ -28,8 +28,19 @@ public:
 	UFUNCTION(BlueprintPure)
 	EAttackPattern GetActiveAttackPattern() const { return ActiveAttackPattern; }
 
+	/**
+	 * 当前武器伤害。
+	 *
+	 * ⚠️ 实现在 .cpp —— 因为它会叠加 D-25 的调试倍率。
+	 * 这是**全项目唯一的玩家伤害读取点**（SMCharacter 的近战与远程都走它），
+	 * 所以倍率只要在这里叠一次，不会散落到各处、也不会漏掉某条攻击路径。
+	 */
 	UFUNCTION(BlueprintPure)
-	float GetActiveBaseDamage() const { return ActiveBaseDamage; }
+	float GetActiveBaseDamage() const;
+
+	/** 未经调试倍率修饰的原始伤害。给 UI/测试用，避免把作弊值当成配置值展示。 */
+	UFUNCTION(BlueprintPure)
+	float GetActiveBaseDamageRaw() const { return ActiveBaseDamage; }
 
 	UFUNCTION(BlueprintPure)
 	float GetActiveAttackSpeed() const { return ActiveAttackSpeed; }

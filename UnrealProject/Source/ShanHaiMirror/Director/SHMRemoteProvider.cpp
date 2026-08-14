@@ -1,4 +1,5 @@
 #include "SHMRemoteProvider.h"
+#include "Framework/SHMDebugCheats.h"
 #include "SHMDirectorWireFormat.h"
 #include "SHMJsonIntent.h"
 #include "HttpModule.h"
@@ -17,6 +18,7 @@ namespace
 	const TCHAR* HeaderSource  = TEXT("X-SHM-Source");
 	const TCHAR* HeaderCache   = TEXT("X-SHM-Cache");
 	const TCHAR* HeaderElapsed = TEXT("X-SHM-Elapsed-Ms");
+	const TCHAR* HeaderDebug   = TEXT("X-SHM-Debug");
 }
 
 FSHMRemoteProvider::FSHMRemoteProvider()
@@ -120,6 +122,16 @@ void FSHMRemoteProvider::RequestIntentAsync(const FDirectorContext& Context, FSH
 	Request->SetURL(BaseUrl / IntentPath);
 	Request->SetVerb(TEXT("POST"));
 	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+
+	// D-25：开着调试作弊时把倍率带给服务端，落进 debug_flags 列。
+	// ⚠️ 这一句不是可选的日志，是**数据可信度的边界**：作弊会抬高战斗效率的速度分，
+	//    这批数据能答「去掉某字段会不会合并指纹」，不能答「真实命中率是多少」。
+	//    靠人记得住哪批是作弊数据是不可能的 —— 所以让它跟着请求一起落库。
+	if (FSHMDebugCheats::IsAnyActive())
+	{
+		Request->SetHeader(HeaderDebug, FSHMDebugCheats::DescribeActive());
+	}
+
 	Request->SetContentAsString(Body);
 	Request->SetTimeout(TimeoutSeconds);
 

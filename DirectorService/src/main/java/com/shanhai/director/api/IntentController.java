@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -83,8 +84,18 @@ public class IntentController {
     /** 本服务能处理的上行契约版本。客户端发来更高的版本就明确拒绝，不猜。 */
     private static final int SUPPORTED_SCHEMA_VERSION = 1;
 
+    /**
+     * ⭐ D-25：客户端在调试作弊生效时带上的头，值是倍率摘要（如 {@code "dmg=4.00,hp=0.40"}）。
+     *
+     * <p>它落进 {@code debug_flags} 列，用来把作弊采来的样本和真实游玩的样本**永久分开**。
+     * 缺了它，两批数据混进同一张表之后任何一次重放都无法解释 ——
+     * 那正是踩坑 #31（测试数据污染开发库）换了个场景。
+     */
+    static final String DEBUG_HEADER = "X-SHM-Debug";
+
     @PostMapping(INTENT_PATH)
     public ResponseEntity<?> intent(@RequestBody(required = false) IntentRequest request,
+                                    @RequestHeader(value = DEBUG_HEADER, required = false) String debugFlags,
                                     HttpServletRequest http) {
         final long startedAt = System.nanoTime();
 
@@ -140,7 +151,7 @@ public class IntentController {
         // 顺手带回来比事后重算一遍好，也少一处算法漂移的机会。
         IntentCache.LookupResult lookup = intentCache.lookupDetailed(request);
         if (lookup.intent().isPresent()) {
-            return respond(request, lookup, lookup.intent().get(), "Cache", "hit", startedAt);
+            return respond(request, lookup, lookup.intent().get(), "Cache", "hit", startedAt, debugFlags);
         }
 
         // --- 真实 LLM 路径 ---
@@ -150,7 +161,7 @@ public class IntentController {
                 // 只缓存**真实 LLM 结果**。stub 与降级产物都不进缓存：
                 // 缓存里混进占位内容，之后每次命中都在发假决策。
                 intentCache.store(request, fromLlm);
-                return respond(request, lookup, fromLlm, "Llm", "miss", startedAt);
+                return respond(request, lookup, fromLlm, "Llm", "miss", startedAt, debugFlags);
             }
             // 上游失败：**返回 5xx 而不是悄悄回落 stub**。
             // 回落的话客户端会拿到一个"成功"的响应，把 stub 的固定配比
@@ -160,12 +171,12 @@ public class IntentController {
             // ⭐ 这条**也要落库**。它虽然没产出决策，但它确实查了缓存——
             //    模拟器要重放缓存状态的演进，漏掉它会让重放的序列和真实的对不上。
             //    source 记成 Upstream503：模拟器据此知道「这次没有往缓存里放东西」。
-            record(request, lookup, "Upstream503", 503, startedAt);
+            record(request, lookup, "Upstream503", 503, startedAt, debugFlags);
             return ResponseEntity.status(503).build();
         }
 
         // --- 未配置 key：stub 路径（M0 行为，保留供无 key 时演示）---
-        return respond(request, lookup, buildStubIntent(), "ServerLocal", "miss", startedAt);
+        return respond(request, lookup, buildStubIntent(), "ServerLocal", "miss", startedAt, debugFlags);
     }
 
     /**
@@ -178,11 +189,11 @@ public class IntentController {
      */
     private ResponseEntity<?> respond(IntentRequest request, IntentCache.LookupResult lookup,
                                       DirectorIntent intent, String source, String cache,
-                                      long startedAt) {
+                                      long startedAt, String debugFlags) {
         final long elapsedNanos = System.nanoTime() - startedAt;
         final long elapsedMs = elapsedNanos / 1_000_000L;
         metrics.recordDecision(source, elapsedNanos);
-        record(request, lookup, source, 200, startedAt);
+        record(request, lookup, source, 200, startedAt, debugFlags);
         return ResponseEntity.ok()
                 .header("X-SHM-Source", source)
                 .header("X-SHM-Cache", cache)
@@ -204,14 +215,14 @@ public class IntentController {
      * （缓存命中不放、stub 不放、503 没东西可放）。重放时靠它决定要不要模拟一次 store。
      */
     private void record(IntentRequest request, IntentCache.LookupResult lookup,
-                        String source, int httpStatus, long startedAt) {
+                        String source, int httpStatus, long startedAt, String debugFlags) {
         // ⚠️ 整段兜住：落库的任何问题都不能影响已经算好的决策。
         // 这里兜的是「构造记录时出意外」（比如画像里有个诡异的值），
         // recorder.record() 自己兜的是「队列满」与「数据库不可用」。
         try {
             recorder.record(IntentRecord.of(request, lookup.fingerprint(), lookup.outcome(),
                     lookup.variantCount(), source, httpStatus,
-                    (System.nanoTime() - startedAt) / 1_000_000L, Instant.now()));
+                    (System.nanoTime() - startedAt) / 1_000_000L, debugFlags, Instant.now()));
         } catch (RuntimeException e) {
             log.warn("[M5] 构造流水记录失败，本条不落库：{}", e.toString());
         }
